@@ -21,6 +21,7 @@ from engine.causal_repair import (
 from engine.portfolio_memory import learn_portfolio_snapshot, update_portfolio_memory, portfolio_prompt_payload
 from engine.portfolio_signals import compute_portfolio_signals
 from engine.regression_guard import portfolio_signal_decision
+from engine.portfolio_orchestrator import build_portfolio_runtime_snapshot, rebalance_platform
 import json
 import os
 import tempfile
@@ -374,3 +375,69 @@ def test_portfolio_prompt_payload_exposes_coordination_guards():
     assert payload["coordination_health"] == 7
     assert payload["novelty_guard"] == 8
     assert payload["policy_directives"] == ["차별화 유지"]
+
+
+def test_portfolio_orchestrator_uses_real_logs_for_boost_selection():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        fixtures = [
+            ("track_a", "Munpia", "B", "A", 2.4, 78, 0.76, 0.10),
+            ("track_b", "Munpia", "B", "A", 3.1, 74, 0.70, 0.27),
+            ("track_c", "KakaoPage", "B", "A", 2.9, 69, 0.64, 0.12),
+        ]
+        for name, platform, bucket, grade, top_percent, ceiling_total, retention, repetition in fixtures:
+            tdir = os.path.join(tracks_root, name)
+            os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+            with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+                json.dump({"project": {"platform": platform, "genre_bucket": bucket}}, f)
+            with open(os.path.join(tdir, "outputs", "grade_state.json"), "w", encoding="utf-8") as f:
+                json.dump({"grade": grade}, f)
+            with open(os.path.join(tdir, "outputs", "certification_report.json"), "w", encoding="utf-8") as f:
+                json.dump({"market": {"stats": {"latest_top_percent": top_percent}}}, f)
+            with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+                for _ in range(3):
+                    f.write(json.dumps({
+                        "meta": {"event_plan": {"type": "betrayal"}},
+                        "content_ceiling": {"ceiling_total": ceiling_total},
+                        "retention": {"predicted_next_episode": retention},
+                        "scores": {"repetition_score": repetition},
+                    }) + "\n")
+        result = rebalance_platform({"safe_mode": False, "portfolio": {"max_boost_per_platform": 1, "max_boost_per_platform_bucket": 1}}, tracks_root)
+        boosted = []
+        for name, *_ in fixtures:
+            track = os.path.join(tracks_root, name, "track.json")
+            with open(track, "r", encoding="utf-8") as f:
+                if json.load(f).get("phase") == "BOOST":
+                    boosted.append(name)
+
+        assert result["ok"] is True
+        assert "track_a" in boosted
+        assert "track_b" not in boosted
+
+
+def test_portfolio_runtime_snapshot_feeds_memory_learning():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        for name, retention, repetition in [("track_a", 0.76, 0.10), ("track_b", 0.71, 0.11)]:
+            tdir = os.path.join(tracks_root, name)
+            os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+            with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+                json.dump({"project": {"platform": "Munpia", "genre_bucket": "B"}}, f)
+            with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+                for _ in range(3):
+                    f.write(json.dumps({
+                        "meta": {"event_plan": {"type": "arrival"}},
+                        "content_ceiling": {"ceiling_total": 75},
+                        "retention": {"predicted_next_episode": retention},
+                        "scores": {"repetition_score": repetition},
+                    }) + "\n")
+        snapshot = build_portfolio_runtime_snapshot(tracks_root)
+        state = {}
+        ensure_story_state(state, cfg={"project": {"platform": "Munpia", "genre_bucket": "B"}})
+        memory = update_portfolio_memory(state, cfg={"project": {"platform": "Munpia", "genre_bucket": "B"}}, tracks_root=tracks_root)
+
+        assert snapshot["boost_ready_tracks"] >= 2
+        assert memory["coordination_health"] >= 6
+        assert any("실로그상 성과" in directive for directive in memory["policy_directives"])

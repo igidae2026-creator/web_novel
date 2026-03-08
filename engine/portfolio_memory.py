@@ -5,6 +5,7 @@ import os
 from typing import Any, Dict, List
 
 from .portfolio_signals import compute_portfolio_signals
+from .portfolio_orchestrator import build_portfolio_runtime_snapshot
 from .story_state import ensure_story_state, sync_story_state
 from .track_loader import list_track_dirs
 
@@ -82,6 +83,9 @@ def update_portfolio_memory(
         root = tracks_root or os.path.join("domains", "webnovel", "tracks")
         portfolio_snapshot = learn_portfolio_snapshot(root)
         metrics.update(compute_portfolio_signals(root))
+        runtime_snapshot = build_portfolio_runtime_snapshot(root)
+    else:
+        runtime_snapshot = {"tracks": [], "boost_ready_tracks": 0, "stable_tracks": 0, "mean_portfolio_score": 0.0}
     portfolio_snapshot = list(portfolio_snapshot or [])
 
     event_type = str(event_plan.get("type", "")).strip()
@@ -136,6 +140,15 @@ def update_portfolio_memory(
     memory["novelty_guard"] = _clamp(10 - max(crowding, novelty_debt))
     memory["cadence_guard"] = _clamp(10 - cadence_pressure)
     memory["release_guard"] = _clamp(10 - max(release_interference, market_overlap))
+    boost_ready = int(runtime_snapshot.get("boost_ready_tracks", 0) or 0)
+    stable_tracks = int(runtime_snapshot.get("stable_tracks", 0) or 0)
+    mean_runtime_score = float(runtime_snapshot.get("mean_portfolio_score", 0.0) or 0.0)
+    if boost_ready or stable_tracks:
+        memory["portfolio_fit"] = _clamp(memory["portfolio_fit"] + min(3, boost_ready + int(mean_runtime_score >= 0.65)))
+        memory["coordination_health"] = _clamp(memory["coordination_health"] + min(3, stable_tracks + int(boost_ready >= 2)))
+        memory["learning_confidence"] = _clamp(memory["learning_confidence"] + int(mean_runtime_score >= 0.65) + int(boost_ready >= 2))
+        memory["shared_risk_alert"] = _clamp(memory["shared_risk_alert"] - int(stable_tracks >= 2))
+        memory["release_guard"] = _clamp(memory["release_guard"] + int(stable_tracks >= 2))
     directives: List[str] = []
     if crowding >= 6 or novelty_debt >= 6:
         directives.append("과밀 이벤트 패턴을 피하고 변주 또는 대체 보상 구조를 선택한다")
@@ -147,6 +160,8 @@ def update_portfolio_memory(
         directives.append("동일 시장 포지션과 출시 타이밍 충돌을 피하도록 차별적 훅과 관계 구도를 강조한다")
     if not directives:
         directives.append("현재 포트폴리오 분산이 안정적이므로 강한 보상과 차별화를 함께 유지한다")
+    if boost_ready >= 2:
+        directives.append("실로그상 성과가 검증된 트랙에는 공격적 노출을, 피로 누적 트랙에는 안정화 운용을 적용한다")
     memory["policy_directives"] = directives[:4]
 
     state["story_state_v2"] = story_state

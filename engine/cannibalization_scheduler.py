@@ -60,6 +60,8 @@ def schedule_boost_assignments(cfg: dict, tracks: List[Dict[str, Any]]) -> List[
         key=lambda x: (
             _grade_rank(x.get("grade","D")),
             float(x.get("latest_top_percent", 999.0)),
+            -float(x.get("portfolio_score", 0.0) or 0.0),
+            float(x.get("fatigue_score", 999.0) or 999.0),
             x.get("last_boost_date"),
             int(x.get("boost_count", 0)),
         )
@@ -78,6 +80,8 @@ def schedule_boost_assignments(cfg: dict, tracks: List[Dict[str, Any]]) -> List[
         if plat_counts.get(plat,0) >= max_per_platform:
             continue
         if pb_counts.get((plat,bucket),0) >= max_per_platform_bucket:
+            continue
+        if float(t.get("fatigue_score", 0.0) or 0.0) >= 0.24:
             continue
         selected.add(id(t))
         plat_counts[plat]=plat_counts.get(plat,0)+1
