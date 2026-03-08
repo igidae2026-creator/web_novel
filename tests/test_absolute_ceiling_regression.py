@@ -9,6 +9,7 @@ from engine.scene_causality import validate_scene_causality
 from engine.antagonist_planner import prepare_antagonist_plan, antagonist_prompt_payload
 from engine.pattern_memory import update_pattern_memory, choose_event_with_memory
 from engine.market_serialization import update_market_serialization, market_prompt_payload
+from engine.causal_repair import build_causal_repair_plan, store_causal_repair_plan, repair_prompt_payload
 
 
 def test_information_asymmetry_promotes_reveal_structure():
@@ -175,3 +176,21 @@ def test_market_serialization_couples_paywall_pressure_and_reader_trust():
     assert bundle["market"]["paywall_pressure"] >= 7
     assert payload["reader_trust"] >= 5
     assert bundle["serialization"]["market_fit"] >= 5
+
+
+def test_causal_repair_plan_targets_critical_issues():
+    state = {}
+    ensure_story_state(state)
+    report = {"issues": ["causal_link", "goal_pressure", "world_consequence"], "score": 0.4}
+    repair = build_causal_repair_plan(
+        report,
+        story_state=state["story_state_v2"],
+        event_plan={"type": "collapse"},
+        cliffhanger_plan={"mode": "collapse_edge", "open_question": "무엇이 먼저 무너질까"},
+    )
+    store_causal_repair_plan(state, repair)
+    payload = repair_prompt_payload(state)
+
+    assert "causal_link" in payload["critical_issues"]
+    assert payload["repair_confidence"] >= 4
+    assert any("인과" in directive or "대가" in directive for directive in payload["directives"])

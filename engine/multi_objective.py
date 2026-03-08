@@ -25,6 +25,7 @@ def build_multi_objective_scores(
     antagonist = story_state.get("antagonist", {})
     pattern_memory = story_state.get("pattern_memory", {})
     market = story_state.get("market", {})
+    control = story_state.get("control", {})
     causal_score = float(causal_report.get("score", 0.6) or 0.6)
     foresight = float(antagonist.get("foresight", 5) or 5) / 10.0
     pressure_clock = float(antagonist.get("pressure_clock", 5) or 5) / 10.0
@@ -33,6 +34,9 @@ def build_multi_objective_scores(
     reader_trust = float(market.get("reader_trust", 5) or 5) / 10.0
     bingeability = float(market.get("bingeability", 5) or 5) / 10.0
     release_confidence = float(market.get("release_confidence", 5) or 5) / 10.0
+    repair = control.get("causal_repair", {}) or {}
+    repair_confidence = float(repair.get("repair_confidence", 5) or 5) / 10.0
+    repair_penalty = min(0.12, len(repair.get("critical_issues", []) or []) * 0.04)
     overused_penalty = min(0.15, len(pattern_memory.get("overused_events", []) or []) * 0.04)
 
     base_coherence = scores.get("coherence", scores.get("logic_score", 0.55)) * 0.7 + causal_score * 0.3
@@ -43,17 +47,17 @@ def build_multi_objective_scores(
 
     objective = {
         "fun": _clamp(scores.get("hook_score", 0.5) * 0.55 + scores.get("escalation", 0.5) * 0.45),
-        "coherence": _clamp(base_coherence + foresight * 0.05 + market_resonance * 0.02),
-        "character_persuasiveness": _clamp(scores.get("character_score", 0.5) * 0.65 + scores.get("emotion_density", 0.5) * 0.2 + causal_report.get("checks", {}).get("goal_pressure", 0.0) * 0.15),
-        "pacing": _clamp(base_pacing + pressure_clock * 0.05 + exploration_bias * 0.03 + bingeability * 0.03),
+        "coherence": _clamp(base_coherence + foresight * 0.05 + market_resonance * 0.02 + repair_confidence * 0.05 - repair_penalty),
+        "character_persuasiveness": _clamp(scores.get("character_score", 0.5) * 0.62 + scores.get("emotion_density", 0.5) * 0.18 + causal_report.get("checks", {}).get("goal_pressure", 0.0) * 0.12 + repair_confidence * 0.08),
+        "pacing": _clamp(base_pacing + pressure_clock * 0.05 + exploration_bias * 0.03 + bingeability * 0.03 + repair_confidence * 0.03),
         "retention": _clamp(base_retention + pressure_clock * 0.05 + market_resonance * 0.05 + exploration_bias * 0.02 + bingeability * 0.03 + reader_trust * 0.03),
         "emotional_immersion": _clamp(scores.get("emotion_density", 0.5) * 0.7 + causal_report.get("checks", {}).get("emotional_trace", 0.0) * 0.3),
-        "information_design": _clamp(float(information.get("dramatic_irony", 5)) / 10.0 * 0.30 + float(retention_state.get("information_gap", 5)) / 10.0 * 0.18 + causal_report.get("checks", {}).get("cliffhanger_alignment", 0.0) * 0.20 + exploration_bias * 0.08 + market_resonance * 0.24),
+        "information_design": _clamp(float(information.get("dramatic_irony", 5)) / 10.0 * 0.24 + float(retention_state.get("information_gap", 5)) / 10.0 * 0.15 + causal_report.get("checks", {}).get("cliffhanger_alignment", 0.0) * 0.16 + exploration_bias * 0.08 + market_resonance * 0.18 + repair_confidence * 0.19 - repair_penalty * 0.5),
         "emotional_payoff": _clamp(scores.get("emotion_density", 0.5) * 0.75 + scores.get("payoff_score", 0.5) * 0.25),
         "long_run_sustainability": _clamp(float(serialization.get("sustainability", 5)) / 10.0 * 0.55 + float(rewards.get("expectation_alignment", 5)) / 10.0 * 0.2 + reader_trust * 0.15 + release_confidence * 0.10),
         "world_logic": _clamp(base_world_logic + foresight * 0.05),
         "chemistry": _clamp(float(serialization.get("chemistry_signal", 5)) / 10.0 * 0.6 + scores.get("chemistry_score", 0.5) * 0.4),
-        "stability": _clamp(base_stability + foresight * 0.05 + market_resonance * 0.05 + exploration_bias * 0.04 + release_confidence * 0.04 - overused_penalty),
+        "stability": _clamp(base_stability + foresight * 0.05 + market_resonance * 0.05 + exploration_bias * 0.04 + release_confidence * 0.04 + repair_confidence * 0.06 - overused_penalty - repair_penalty),
     }
     return objective
 

@@ -263,6 +263,11 @@ def _default_story_state(bucket: str | None, outline: str) -> Dict[str, Any]:
             "last_event_type": "",
             "last_cliffhanger_mode": "",
             "regression_flags": [],
+            "causal_repair": {
+                "critical_issues": [],
+                "directives": [],
+                "repair_confidence": 5,
+            },
         },
     }
 

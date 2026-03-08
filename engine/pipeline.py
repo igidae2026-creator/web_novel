@@ -30,6 +30,7 @@ from .scene_causality import validate_scene_causality
 from .antagonist_planner import prepare_antagonist_plan, antagonist_prompt_payload
 from .pattern_memory import update_pattern_memory, pattern_prompt_payload
 from .market_serialization import market_prompt_payload, update_market_serialization
+from .causal_repair import build_causal_repair_plan, store_causal_repair_plan
 from analytics.content_ceiling import evaluate_episode
 
 def _internal_knobs(cfg: dict, episode: int) -> dict:
@@ -268,8 +269,19 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     max_passes = int(cfg["limits"].get("max_revision_passes", 2))
     cur_obj = draft_obj
     for _ in range(max_passes):
+        rewrite_repair_plan = build_causal_repair_plan(
+            validate_scene_causality(
+                str(cur_obj.get("episode_text", "")),
+                story_state=state.data.get("story_state_v2", {}),
+                event_plan=event_plan,
+                cliffhanger_plan=cliffhanger_plan,
+            ),
+            story_state=state.data.get("story_state_v2", {}),
+            event_plan=event_plan,
+            cliffhanger_plan=cliffhanger_plan,
+        )
         rewrite_prompt = PROMPTS.episode_rewrite_json(
-            cfg, cur_obj, episode, knobs, style, sub_key, viral_required, story_state=story_state
+            cfg, cur_obj, episode, knobs, style, sub_key, viral_required, story_state=story_state, repair_plan=rewrite_repair_plan
         )
         rewrite_resp = llm.call(rewrite_prompt, temperature=0.55)
         cost.add_usage(rewrite_resp)
@@ -315,6 +327,13 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         event_plan=event_plan,
         cliffhanger_plan=cliffhanger_plan,
     )
+    repair_plan = build_causal_repair_plan(
+        causal_report,
+        story_state=state.data.get("story_state_v2", {}),
+        event_plan=event_plan,
+        cliffhanger_plan=cliffhanger_plan,
+    )
+    store_causal_repair_plan(state.data, repair_plan)
     objective_scores = build_multi_objective_scores(
         score_obj,
         retention_state=state.data.get("retention_engine", {}),
@@ -347,6 +366,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "balance": objective_balance,
     }
     meta["scene_causality"] = causal_report
+    meta["causal_repair"] = repair_plan
 
     # update score history
     hist = state.get("score_history", [])

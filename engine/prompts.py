@@ -150,7 +150,7 @@ class PROMPTS:
 """
 
     @staticmethod
-    def episode_rewrite_json(cfg: dict, draft_json: dict, ep: int, knobs: dict, style: StyleVector, sub_engine_key: str, viral_required: bool, story_state: dict | None = None) -> str:
+    def episode_rewrite_json(cfg: dict, draft_json: dict, ep: int, knobs: dict, style: StyleVector, sub_engine_key: str, viral_required: bool, story_state: dict | None = None, repair_plan: dict | None = None) -> str:
         pj = cfg["project"]
         nv = cfg["novel"]
         plat = PLATFORM_STRATEGY.get(pj["platform"], {})
@@ -168,6 +168,7 @@ class PROMPTS:
 - 문체/리듬 제약 준수
 - 클리프행어 강화
 - 바이럴 요소(quote_line/comment_hook/cliffhanger) 유지 또는 강화
+- 인과 보수 지시가 있으면 우선 반영
 
 플랫폼: {pj['platform']} / 장르: {bucket} / 엔진: {sub.label}
 페이싱: {plat.get('pacing','balanced')}
@@ -176,6 +177,9 @@ class PROMPTS:
 
 스토리 상태:
 {story_state or {}}
+
+인과 보수 지시:
+{repair_plan or {}}
 
 문체/리듬 제약:
 {constraints_text(style)}\n자료 기반 제약(있으면 반영):\n{profile_constraints_text(knobs.get('profile'))}
