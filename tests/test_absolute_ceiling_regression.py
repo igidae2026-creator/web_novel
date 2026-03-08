@@ -8,6 +8,7 @@ from engine.predictive_retention import build_retention_state, predict_retention
 from engine.scene_causality import validate_scene_causality
 from engine.antagonist_planner import prepare_antagonist_plan, antagonist_prompt_payload
 from engine.pattern_memory import update_pattern_memory, choose_event_with_memory
+from engine.market_serialization import update_market_serialization, market_prompt_payload
 
 
 def test_information_asymmetry_promotes_reveal_structure():
@@ -157,3 +158,20 @@ def test_pattern_memory_pushes_exploration_when_event_is_overused():
     assert "betrayal" in memory["overused_events"]
     assert memory["exploration_bias"] >= 6
     assert picked != "betrayal"
+
+
+def test_market_serialization_couples_paywall_pressure_and_reader_trust():
+    state = {}
+    cfg = {
+        "project": {"platform": "KakaoPage", "genre_bucket": "A"},
+        "novel": {"paywall_window": [20, 30], "early_focus_episodes": 5},
+    }
+    ensure_story_state(state, cfg=cfg)
+    state["story_state_v2"]["rewards"]["reward_density"] = 6
+    state["story_state_v2"]["rewards"]["expectation_alignment"] = 7
+    bundle = update_market_serialization(state, episode=24, cfg=cfg, event_plan={"type": "arrival"})
+    payload = market_prompt_payload(state)
+
+    assert bundle["market"]["paywall_pressure"] >= 7
+    assert payload["reader_trust"] >= 5
+    assert bundle["serialization"]["market_fit"] >= 5

@@ -225,6 +225,15 @@ def _default_story_state(bucket: str | None, outline: str) -> Dict[str, Any]:
             "market_fit": 5,
             "exploration_budget": 4,
         },
+        "market": {
+            "platform_pacing": "balanced",
+            "paywall_pressure": 4,
+            "reader_trust": 6,
+            "bingeability": 5,
+            "serialization_heat": 5,
+            "release_confidence": 5,
+            "market_signals": [],
+        },
         "information": {
             "hidden_truths": [
                 "주인공의 약점은 외부가 아니라 내부 계약에 있다",

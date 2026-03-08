@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from .story_state import chemistry_pressure, ensure_story_state, sync_story_state
+from .market_serialization import update_market_serialization
 
 
 def update_reward_serialization(state: Dict[str, Any], episode: int, event_plan: Dict[str, Any] | None = None) -> Dict[str, Any]:
@@ -35,7 +36,9 @@ def update_reward_serialization(state: Dict[str, Any], episode: int, event_plan:
 
     state["story_state_v2"] = story_state
     sync_story_state(state)
+    market_bundle = update_market_serialization(state, episode=episode, event_plan=event_plan)
     return {
         "rewards": rewards,
-        "serialization": serialization,
+        "serialization": market_bundle["serialization"],
+        "market": market_bundle["market"],
     }

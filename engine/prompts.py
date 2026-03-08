@@ -84,6 +84,9 @@ class PROMPTS:
 패턴 메모리:
 {(story_state or {}).get('pattern_memory', {})}
 
+시장/연재 상태:
+{(story_state or {}).get('market', {})}
+
 외부 랭킹 관측치:
 {ext_snapshot}
 
@@ -101,6 +104,7 @@ class PROMPTS:
 - 주인공의 욕망/공포/약점이 선택과 손실에 직접 반영되어야 함
 - 적대자의 다음 수와 장기 의도가 씬 전개에 드러나야 함
 - 최근 과사용 패턴을 반복하지 말고 변주를 만들 것
+- 플랫폼 페이싱, 유료구간 압력, 독자 신뢰를 해치지 않도록 연재형 보상 구조를 유지할 것
 """
 
     @staticmethod
