@@ -236,6 +236,14 @@ def _default_story_state(bucket: str | None, outline: str) -> Dict[str, Any]:
             "dramatic_irony": 4,
             "emotional_reservoir": 5,
         },
+        "pattern_memory": {
+            "recent_event_types": [],
+            "recent_cliffhanger_modes": [],
+            "event_counts": {},
+            "overused_events": [],
+            "exploration_bias": 4,
+            "market_resonance": 5,
+        },
         "history": {
             "events": [],
             "outcomes": [],

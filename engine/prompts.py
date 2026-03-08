@@ -81,6 +81,9 @@ class PROMPTS:
 적대자 장기 계획:
 {(story_state or {}).get('antagonist', {})}
 
+패턴 메모리:
+{(story_state or {}).get('pattern_memory', {})}
+
 외부 랭킹 관측치:
 {ext_snapshot}
 
@@ -97,6 +100,7 @@ class PROMPTS:
 - 이전 회차 대비 갈등 단계 상승
 - 주인공의 욕망/공포/약점이 선택과 손실에 직접 반영되어야 함
 - 적대자의 다음 수와 장기 의도가 씬 전개에 드러나야 함
+- 최근 과사용 패턴을 반복하지 말고 변주를 만들 것
 """
 
     @staticmethod

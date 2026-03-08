@@ -23,9 +23,13 @@ def build_multi_objective_scores(
     rewards = story_state.get("rewards", {})
     information = story_state.get("information", {})
     antagonist = story_state.get("antagonist", {})
+    pattern_memory = story_state.get("pattern_memory", {})
     causal_score = float(causal_report.get("score", 0.6) or 0.6)
     foresight = float(antagonist.get("foresight", 5) or 5) / 10.0
     pressure_clock = float(antagonist.get("pressure_clock", 5) or 5) / 10.0
+    exploration_bias = float(pattern_memory.get("exploration_bias", 5) or 5) / 10.0
+    market_resonance = float(pattern_memory.get("market_resonance", 5) or 5) / 10.0
+    overused_penalty = min(0.15, len(pattern_memory.get("overused_events", []) or []) * 0.04)
 
     base_coherence = scores.get("coherence", scores.get("logic_score", 0.55)) * 0.7 + causal_score * 0.3
     base_pacing = scores.get("pacing_score", 0.5) * 0.7 + scores.get("hook_score", 0.5) * 0.3
@@ -35,17 +39,17 @@ def build_multi_objective_scores(
 
     objective = {
         "fun": _clamp(scores.get("hook_score", 0.5) * 0.55 + scores.get("escalation", 0.5) * 0.45),
-        "coherence": _clamp(base_coherence + foresight * 0.05),
+        "coherence": _clamp(base_coherence + foresight * 0.05 + market_resonance * 0.02),
         "character_persuasiveness": _clamp(scores.get("character_score", 0.5) * 0.65 + scores.get("emotion_density", 0.5) * 0.2 + causal_report.get("checks", {}).get("goal_pressure", 0.0) * 0.15),
-        "pacing": _clamp(base_pacing + pressure_clock * 0.05),
-        "retention": _clamp(base_retention + pressure_clock * 0.05),
+        "pacing": _clamp(base_pacing + pressure_clock * 0.05 + exploration_bias * 0.03),
+        "retention": _clamp(base_retention + pressure_clock * 0.05 + market_resonance * 0.08 + exploration_bias * 0.02),
         "emotional_immersion": _clamp(scores.get("emotion_density", 0.5) * 0.7 + causal_report.get("checks", {}).get("emotional_trace", 0.0) * 0.3),
-        "information_design": _clamp(float(information.get("dramatic_irony", 5)) / 10.0 * 0.45 + float(retention_state.get("information_gap", 5)) / 10.0 * 0.25 + causal_report.get("checks", {}).get("cliffhanger_alignment", 0.0) * 0.3),
+        "information_design": _clamp(float(information.get("dramatic_irony", 5)) / 10.0 * 0.30 + float(retention_state.get("information_gap", 5)) / 10.0 * 0.18 + causal_report.get("checks", {}).get("cliffhanger_alignment", 0.0) * 0.20 + exploration_bias * 0.08 + market_resonance * 0.24),
         "emotional_payoff": _clamp(scores.get("emotion_density", 0.5) * 0.75 + scores.get("payoff_score", 0.5) * 0.25),
         "long_run_sustainability": _clamp(float(serialization.get("sustainability", 5)) / 10.0 * 0.7 + float(rewards.get("expectation_alignment", 5)) / 10.0 * 0.3),
         "world_logic": _clamp(base_world_logic + foresight * 0.05),
         "chemistry": _clamp(float(serialization.get("chemistry_signal", 5)) / 10.0 * 0.6 + scores.get("chemistry_score", 0.5) * 0.4),
-        "stability": _clamp(base_stability + foresight * 0.05),
+        "stability": _clamp(base_stability + foresight * 0.05 + market_resonance * 0.07 + exploration_bias * 0.04 - overused_penalty),
     }
     return objective
 

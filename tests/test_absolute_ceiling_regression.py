@@ -7,6 +7,7 @@ from engine.regression_guard import regression_decision
 from engine.predictive_retention import build_retention_state, predict_retention
 from engine.scene_causality import validate_scene_causality
 from engine.antagonist_planner import prepare_antagonist_plan, antagonist_prompt_payload
+from engine.pattern_memory import update_pattern_memory, choose_event_with_memory
 
 
 def test_information_asymmetry_promotes_reveal_structure():
@@ -137,3 +138,22 @@ def test_antagonist_plan_builds_long_horizon_pressure():
     assert plan["campaign_phase"] in {"positioning", "constriction", "domination", "collapse_harvest", "probing"}
     assert "불신" in payload["next_move"] or "주도권" in payload["next_move"] or "규칙" in payload["next_move"]
     assert len(payload["horizon_beats"]) == 3
+
+
+def test_pattern_memory_pushes_exploration_when_event_is_overused():
+    state = {}
+    ensure_story_state(state)
+    for episode in range(1, 4):
+        update_pattern_memory(
+            state,
+            episode=episode,
+            event_plan={"type": "betrayal"},
+            cliffhanger_plan={"mode": "choice_lock"},
+        )
+
+    memory = state["story_state_v2"]["pattern_memory"]
+    picked = choose_event_with_memory(state, preferred="betrayal", fallback="arrival")
+
+    assert "betrayal" in memory["overused_events"]
+    assert memory["exploration_bias"] >= 6
+    assert picked != "betrayal"

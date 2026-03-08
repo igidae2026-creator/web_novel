@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from .story_state import EVENT_TYPES, ensure_story_state, open_threads, sync_story_state
+from .pattern_memory import choose_event_with_memory
 
 
 def _recent_events(state: Dict[str, Any]) -> List[str]:
@@ -24,37 +25,41 @@ def _choose_type(state: Dict[str, Any], episode: int) -> str:
     reward_density = int(rewards.get("reward_density", 5) or 5)
     next_move = str(antagonist.get("next_move", ""))
 
+    preferred = ""
     if mode in {"irreversible_stakes", "sacrifice"} and "sacrifice" not in recent:
-        return "sacrifice"
-    if "불신" in next_move and "misunderstanding" not in recent:
-        return "misunderstanding"
-    if "타이머" in next_move and "timer" not in recent:
-        return "timer"
-    if "주도권" in next_move and "power_shift" not in recent:
-        return "power_shift"
-    if mode in {"sacrifice", "collateral_damage"} and "loss" not in recent:
-        return "loss"
-    if mode == "power_reversal" and "reversal" not in recent:
-        return "reversal"
-    if urgency >= 8 and "betrayal" not in recent:
-        return "betrayal"
-    if instability >= 8 and "collapse" not in recent:
-        return "collapse"
-    if consequence >= 7 and "arrival" not in recent:
-        return "arrival"
-    if reward_density <= 4 and "false_victory" not in recent:
-        return "false_victory"
-    if episode % 6 == 0 and "timer" not in recent:
-        return "timer"
-    if episode % 5 == 0 and "reveal" not in recent:
-        return "reveal"
-    if consequence >= 6 and "misunderstanding" not in recent and urgency <= 7:
-        return "misunderstanding"
+        preferred = "sacrifice"
+    elif "불신" in next_move and "misunderstanding" not in recent:
+        preferred = "misunderstanding"
+    elif "타이머" in next_move and "timer" not in recent:
+        preferred = "timer"
+    elif "주도권" in next_move and "power_shift" not in recent:
+        preferred = "power_shift"
+    elif mode in {"sacrifice", "collateral_damage"} and "loss" not in recent:
+        preferred = "loss"
+    elif mode == "power_reversal" and "reversal" not in recent:
+        preferred = "reversal"
+    elif urgency >= 8 and "betrayal" not in recent:
+        preferred = "betrayal"
+    elif instability >= 8 and "collapse" not in recent:
+        preferred = "collapse"
+    elif consequence >= 7 and "arrival" not in recent:
+        preferred = "arrival"
+    elif reward_density <= 4 and "false_victory" not in recent:
+        preferred = "false_victory"
+    elif episode % 6 == 0 and "timer" not in recent:
+        preferred = "timer"
+    elif episode % 5 == 0 and "reveal" not in recent:
+        preferred = "reveal"
+    elif consequence >= 6 and "misunderstanding" not in recent and urgency <= 7:
+        preferred = "misunderstanding"
 
     for event_type in EVENT_TYPES:
         if event_type not in recent:
-            return event_type
-    return EVENT_TYPES[episode % len(EVENT_TYPES)]
+            fallback = event_type
+            break
+    else:
+        fallback = EVENT_TYPES[episode % len(EVENT_TYPES)]
+    return choose_event_with_memory(state, preferred, fallback)
 
 
 def generate_event_plan(state: Dict[str, Any], episode: int) -> Dict[str, Any]:
