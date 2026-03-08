@@ -31,6 +31,7 @@ from .antagonist_planner import prepare_antagonist_plan, antagonist_prompt_paylo
 from .pattern_memory import update_pattern_memory, pattern_prompt_payload
 from .market_serialization import market_prompt_payload, update_market_serialization
 from .causal_repair import build_causal_repair_plan, store_causal_repair_plan
+from .portfolio_memory import portfolio_prompt_payload, update_portfolio_memory
 from analytics.content_ceiling import evaluate_episode
 
 def _internal_knobs(cfg: dict, episode: int) -> dict:
@@ -218,6 +219,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     prepare_antagonist_plan(state.data, episode=episode)
     update_pattern_memory(state.data, episode=episode)
     update_market_serialization(state.data, episode=episode, cfg=cfg)
+    update_portfolio_memory(state.data, cfg=cfg)
     event_plan = generate_event_plan(state.data, episode=episode)
     prepare_antagonist_plan(state.data, episode=episode, event_plan=event_plan)
     prepare_information_emotion(state.data, episode=episode, event_plan=event_plan)
@@ -239,6 +241,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "antagonist": antagonist_prompt_payload(state.data),
         "pattern_memory": pattern_prompt_payload(state.data),
         "market": market_prompt_payload(state.data),
+        "portfolio": portfolio_prompt_payload(state.data),
     }
 
     snap = ext.latest(pj["platform"], pj["genre_bucket"]) or {}
@@ -417,6 +420,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     prepare_information_emotion(state.data, episode=episode, event_plan=event_plan)
     update_pattern_memory(state.data, episode=episode, event_plan=event_plan, cliffhanger_plan=cliffhanger_plan)
     update_market_serialization(state.data, episode=episode, cfg=cfg, event_plan=event_plan)
+    update_portfolio_memory(state.data, cfg=cfg, event_plan=event_plan)
     next_objective = build_multi_objective_scores(
         score_obj,
         retention_state=state.data.get("retention_engine", {}),

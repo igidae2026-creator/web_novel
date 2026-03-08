@@ -10,6 +10,7 @@ from engine.antagonist_planner import prepare_antagonist_plan, antagonist_prompt
 from engine.pattern_memory import update_pattern_memory, choose_event_with_memory
 from engine.market_serialization import update_market_serialization, market_prompt_payload
 from engine.causal_repair import build_causal_repair_plan, store_causal_repair_plan, repair_prompt_payload
+from engine.portfolio_memory import update_portfolio_memory, portfolio_prompt_payload
 
 
 def test_information_asymmetry_promotes_reveal_structure():
@@ -194,3 +195,26 @@ def test_causal_repair_plan_targets_critical_issues():
     assert "causal_link" in payload["critical_issues"]
     assert payload["repair_confidence"] >= 4
     assert any("인과" in directive or "대가" in directive for directive in payload["directives"])
+
+
+def test_portfolio_memory_tracks_crowded_and_winning_patterns():
+    state = {}
+    cfg = {"project": {"platform": "Munpia", "genre_bucket": "B"}}
+    ensure_story_state(state, cfg=cfg)
+    state["story_state_v2"]["market"]["reader_trust"] = 7
+    state["story_state_v2"]["market"]["release_confidence"] = 6
+    state["story_state_v2"]["serialization"]["market_fit"] = 7
+    memory = update_portfolio_memory(
+        state,
+        cfg=cfg,
+        event_plan={"type": "arrival"},
+        portfolio_snapshot=[
+            {"pattern": "betrayal", "crowding": 8},
+            {"winning_pattern": "arrival", "heat": 8},
+        ],
+    )
+    payload = portfolio_prompt_payload(state)
+
+    assert "betrayal" in memory["crowded_patterns"]
+    assert "arrival" in memory["winning_patterns"]
+    assert payload["portfolio_fit"] >= 5

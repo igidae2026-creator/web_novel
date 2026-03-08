@@ -253,6 +253,14 @@ def _default_story_state(bucket: str | None, outline: str) -> Dict[str, Any]:
             "exploration_bias": 4,
             "market_resonance": 5,
         },
+        "portfolio_memory": {
+            "track_signature": "default",
+            "winning_patterns": [],
+            "crowded_patterns": [],
+            "diversity_pressure": 5,
+            "portfolio_fit": 5,
+            "shared_risk_alert": 3,
+        },
         "history": {
             "events": [],
             "outcomes": [],
