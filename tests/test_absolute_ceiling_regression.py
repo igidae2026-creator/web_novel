@@ -18,7 +18,10 @@ from engine.causal_repair import (
     start_causal_repair_cycle,
     store_causal_repair_plan,
 )
-from engine.portfolio_memory import update_portfolio_memory, portfolio_prompt_payload
+from engine.portfolio_memory import learn_portfolio_snapshot, update_portfolio_memory, portfolio_prompt_payload
+import json
+import os
+import tempfile
 
 
 def test_information_asymmetry_promotes_reveal_structure():
@@ -262,3 +265,41 @@ def test_portfolio_memory_tracks_crowded_and_winning_patterns():
     assert "betrayal" in memory["crowded_patterns"]
     assert "arrival" in memory["winning_patterns"]
     assert payload["portfolio_fit"] >= 5
+
+
+def test_portfolio_memory_learns_from_real_metrics_logs():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        track_dir = os.path.join(tracks_root, "track_a")
+        os.makedirs(os.path.join(track_dir, "outputs"), exist_ok=True)
+        with open(os.path.join(track_dir, "track.json"), "w", encoding="utf-8") as f:
+            json.dump({"project": {"platform": "Munpia", "genre_bucket": "B"}}, f)
+        rows = [
+            {
+                "meta": {"event_plan": {"type": "betrayal"}},
+                "content_ceiling": {"ceiling_total": 68},
+                "retention": {"predicted_next_episode": 0.72},
+                "scores": {"repetition_score": 0.12},
+            },
+            {
+                "meta": {"event_plan": {"type": "betrayal"}},
+                "content_ceiling": {"ceiling_total": 66},
+                "retention": {"predicted_next_episode": 0.69},
+                "scores": {"repetition_score": 0.11},
+            },
+        ]
+        with open(os.path.join(track_dir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+            for row in rows:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+        snapshot = learn_portfolio_snapshot(tracks_root)
+        state = {}
+        cfg = {"project": {"platform": "Munpia", "genre_bucket": "B"}}
+        ensure_story_state(state, cfg=cfg)
+        memory = update_portfolio_memory(state, cfg=cfg, tracks_root=tracks_root)
+
+        assert snapshot
+        assert snapshot[0]["winning_pattern"] == "betrayal"
+        assert memory["learned_from_logs"] is True
+        assert "betrayal" in memory["winning_patterns"]

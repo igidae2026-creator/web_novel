@@ -52,14 +52,17 @@ def update_pattern_memory(
 def choose_event_with_memory(state: Dict[str, Any], preferred: str, fallback: str) -> str:
     story_state = ensure_story_state(state)
     memory = story_state["pattern_memory"]
+    portfolio_memory = story_state.get("portfolio_memory", {})
     overused = set(memory.get("overused_events", []) or [])
+    overused.update(portfolio_memory.get("crowded_patterns", []) or [])
     exploration_bias = int(memory.get("exploration_bias", 4) or 4)
+    fatigue_patterns = set(portfolio_memory.get("fatigue_patterns", []) or [])
 
-    if preferred and preferred not in overused:
+    if preferred and preferred not in overused and preferred not in fatigue_patterns:
         return preferred
     if exploration_bias >= 6:
         for event_type in EVENT_TYPES:
-            if event_type not in overused and event_type != preferred:
+            if event_type not in overused and event_type not in fatigue_patterns and event_type != preferred:
                 return event_type
     return fallback
 

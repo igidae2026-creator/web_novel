@@ -43,6 +43,7 @@ def build_multi_objective_scores(
     portfolio_fit = float(portfolio_memory.get("portfolio_fit", 5) or 5) / 10.0
     diversity_pressure = float(portfolio_memory.get("diversity_pressure", 5) or 5) / 10.0
     shared_risk_alert = float(portfolio_memory.get("shared_risk_alert", 3) or 3) / 10.0
+    learning_confidence = float(portfolio_memory.get("learning_confidence", 0) or 0) / 10.0
 
     base_coherence = scores.get("coherence", scores.get("logic_score", 0.55)) * 0.7 + causal_score * 0.3
     base_pacing = scores.get("pacing_score", 0.5) * 0.7 + scores.get("hook_score", 0.5) * 0.3
@@ -52,17 +53,17 @@ def build_multi_objective_scores(
 
     objective = {
         "fun": _clamp(scores.get("hook_score", 0.5) * 0.55 + scores.get("escalation", 0.5) * 0.45),
-        "coherence": _clamp(base_coherence + foresight * 0.05 + market_resonance * 0.02 + repair_confidence * 0.03 + closure_score * 0.05 + portfolio_fit * 0.03 - repair_penalty),
+        "coherence": _clamp(base_coherence + foresight * 0.05 + market_resonance * 0.02 + repair_confidence * 0.03 + closure_score * 0.05 + portfolio_fit * 0.03 + learning_confidence * 0.03 - repair_penalty),
         "character_persuasiveness": _clamp(scores.get("character_score", 0.5) * 0.60 + scores.get("emotion_density", 0.5) * 0.18 + causal_report.get("checks", {}).get("goal_pressure", 0.0) * 0.12 + repair_confidence * 0.04 + closure_score * 0.06),
         "pacing": _clamp(base_pacing + pressure_clock * 0.05 + exploration_bias * 0.03 + bingeability * 0.03 + repair_confidence * 0.02 + closure_score * 0.04 + diversity_pressure * 0.05),
-        "retention": _clamp(base_retention + pressure_clock * 0.05 + market_resonance * 0.05 + exploration_bias * 0.02 + bingeability * 0.03 + reader_trust * 0.03 + portfolio_fit * 0.06),
+        "retention": _clamp(base_retention + pressure_clock * 0.05 + market_resonance * 0.05 + exploration_bias * 0.02 + bingeability * 0.03 + reader_trust * 0.03 + portfolio_fit * 0.05 + learning_confidence * 0.03),
         "emotional_immersion": _clamp(scores.get("emotion_density", 0.5) * 0.7 + causal_report.get("checks", {}).get("emotional_trace", 0.0) * 0.3),
-        "information_design": _clamp(float(information.get("dramatic_irony", 5)) / 10.0 * 0.20 + float(retention_state.get("information_gap", 5)) / 10.0 * 0.14 + causal_report.get("checks", {}).get("cliffhanger_alignment", 0.0) * 0.15 + exploration_bias * 0.08 + market_resonance * 0.16 + repair_confidence * 0.10 + closure_score * 0.10 + portfolio_fit * 0.08 - repair_penalty * 0.5),
+        "information_design": _clamp(float(information.get("dramatic_irony", 5)) / 10.0 * 0.18 + float(retention_state.get("information_gap", 5)) / 10.0 * 0.13 + causal_report.get("checks", {}).get("cliffhanger_alignment", 0.0) * 0.14 + exploration_bias * 0.08 + market_resonance * 0.15 + repair_confidence * 0.09 + closure_score * 0.09 + portfolio_fit * 0.05 + learning_confidence * 0.09 - repair_penalty * 0.5),
         "emotional_payoff": _clamp(scores.get("emotion_density", 0.5) * 0.75 + scores.get("payoff_score", 0.5) * 0.25),
         "long_run_sustainability": _clamp(float(serialization.get("sustainability", 5)) / 10.0 * 0.52 + float(rewards.get("expectation_alignment", 5)) / 10.0 * 0.18 + reader_trust * 0.10 + release_confidence * 0.06 + portfolio_fit * 0.12 + (1.0 - shared_risk_alert) * 0.04),
         "world_logic": _clamp(base_world_logic + foresight * 0.05),
         "chemistry": _clamp(float(serialization.get("chemistry_signal", 5)) / 10.0 * 0.6 + scores.get("chemistry_score", 0.5) * 0.4),
-        "stability": _clamp(base_stability + foresight * 0.05 + market_resonance * 0.05 + exploration_bias * 0.04 + release_confidence * 0.04 + repair_confidence * 0.03 + closure_score * 0.05 + portfolio_fit * 0.05 - overused_penalty - repair_penalty - shared_risk_alert * 0.05),
+        "stability": _clamp(base_stability + foresight * 0.05 + market_resonance * 0.05 + exploration_bias * 0.04 + release_confidence * 0.04 + repair_confidence * 0.03 + closure_score * 0.05 + portfolio_fit * 0.04 + learning_confidence * 0.05 - overused_penalty - repair_penalty - shared_risk_alert * 0.05),
     }
     return objective
 

@@ -257,9 +257,13 @@ def _default_story_state(bucket: str | None, outline: str) -> Dict[str, Any]:
             "track_signature": "default",
             "winning_patterns": [],
             "crowded_patterns": [],
+            "fatigue_patterns": [],
             "diversity_pressure": 5,
             "portfolio_fit": 5,
             "shared_risk_alert": 3,
+            "learned_from_logs": False,
+            "learning_confidence": 0,
+            "observed_tracks": 0,
         },
         "history": {
             "events": [],
