@@ -42,6 +42,7 @@ from .causal_repair import (
     store_causal_repair_plan,
 )
 from .portfolio_memory import portfolio_prompt_payload, update_portfolio_memory
+from .reliability import simulate_long_run, update_system_status
 from analytics.content_ceiling import evaluate_episode
 
 def _internal_knobs(cfg: dict, episode: int) -> dict:
@@ -426,8 +427,17 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "axes": objective_scores,
         "balance": objective_balance,
     }
+    system_status = update_system_status(
+        state.data,
+        episode=episode,
+        objective_scores=objective_scores,
+        portfolio_signals=state.data.get("story_state_v2", {}).get("portfolio_memory", {}),
+    )
+    simulation = simulate_long_run(objective_scores, state.data.get("story_state_v2", {}))
     meta["scene_causality"] = causal_report
     meta["causal_repair"] = repair_plan
+    meta["system_status"] = system_status
+    meta["simulation"] = simulation
 
     # update score history
     hist = state.get("score_history", [])
@@ -464,6 +474,8 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         },
         "content_ceiling": content_ceiling,
         "episode_attribution": episode_attribution,
+        "system_status": system_status,
+        "simulation": simulation,
         "cost": cost.snapshot(),
     }
     if cfg["output"].get("save_metrics_jsonl", True):

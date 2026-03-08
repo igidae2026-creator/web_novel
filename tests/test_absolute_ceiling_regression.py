@@ -23,6 +23,7 @@ from engine.repair_diff_audit import audit_repair_diff
 from engine.promise_graph import update_promise_payoff_graph
 from engine.episode_attribution import build_episode_attribution, record_episode_attribution
 from engine.causal_attribution import build_scene_event_attribution
+from engine.reliability import detect_quality_drift, simulate_long_run, update_system_status
 from engine.portfolio_memory import learn_portfolio_snapshot, update_portfolio_memory, portfolio_prompt_payload
 from engine.portfolio_signals import compute_portfolio_signals
 from engine.regression_guard import portfolio_signal_decision, release_policy_decision
@@ -941,3 +942,71 @@ def test_external_market_rhythm_couples_into_release_allocation():
 
         assert release["track_a"]["market_rhythm"]["rhythm_score"] > release["track_b"]["market_rhythm"]["rhythm_score"]
         assert release["track_a"]["adaptive_score"] > release["track_b"]["adaptive_score"]
+
+
+def test_long_run_simulation_reports_30_60_120_episode_runs():
+    state = {}
+    ensure_story_state(state)
+    story_state = state["story_state_v2"]
+    story_state["portfolio_memory"]["release_guard"] = 7
+    story_state["portfolio_memory"]["coordination_health"] = 7
+    story_state["promise_graph"]["payoff_integrity"] = 0.82
+    story_state["control"]["causal_repair"]["closure_score"] = 0.78
+    result = simulate_long_run(
+        {
+            "fun": 0.76,
+            "coherence": 0.84,
+            "character_persuasiveness": 0.82,
+            "pacing": 0.81,
+            "retention": 0.83,
+            "emotional_immersion": 0.79,
+            "information_design": 0.78,
+            "emotional_payoff": 0.8,
+            "long_run_sustainability": 0.82,
+            "world_logic": 0.81,
+            "chemistry": 0.77,
+            "stability": 0.84,
+        },
+        story_state,
+    )
+
+    assert set(result["runs"].keys()) == {"30", "60", "120"}
+    assert result["runs"]["120"]["episodes"] == 120
+    assert result["runs"]["30"]["mean_balanced_total"] > 0.0
+
+
+def test_system_status_records_iteration_history_and_portfolio_signals():
+    state = {}
+    ensure_story_state(state)
+    status = update_system_status(
+        state,
+        episode=3,
+        objective_scores={
+            "fun": 0.76,
+            "coherence": 0.84,
+            "character_persuasiveness": 0.82,
+            "pacing": 0.81,
+            "retention": 0.83,
+            "emotional_immersion": 0.79,
+            "information_design": 0.78,
+            "emotional_payoff": 0.8,
+            "long_run_sustainability": 0.82,
+            "world_logic": 0.81,
+            "chemistry": 0.77,
+            "stability": 0.84,
+        },
+        portfolio_signals={"release_guard": 7, "coordination_health": 6},
+    )
+
+    assert status["balanced_total_history"]
+    assert status["repair_rate_history"]
+    assert status["portfolio_signal_history"][-1]["episode"] == 3
+    assert state["system_status"]["latest_portfolio_signals"]["release_guard"] == 7
+
+
+def test_quality_drift_detection_triggers_warning_and_rollback_signal():
+    warning = detect_quality_drift([0.83, 0.832, 0.831, 0.805, 0.799, 0.792], lookback=3)
+    severe = detect_quality_drift([0.85, 0.848, 0.847, 0.79, 0.782, 0.776], lookback=3)
+
+    assert warning["warning"]
+    assert severe["rollback_signal"]
