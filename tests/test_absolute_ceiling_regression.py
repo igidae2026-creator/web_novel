@@ -22,6 +22,7 @@ from engine.portfolio_memory import learn_portfolio_snapshot, update_portfolio_m
 from engine.portfolio_signals import compute_portfolio_signals
 from engine.regression_guard import portfolio_signal_decision
 from engine.portfolio_orchestrator import build_portfolio_runtime_snapshot, rebalance_platform
+from engine.cross_track_release import build_cross_track_release_plan
 import json
 import os
 import tempfile
@@ -441,3 +442,33 @@ def test_portfolio_runtime_snapshot_feeds_memory_learning():
         assert snapshot["boost_ready_tracks"] >= 2
         assert memory["coordination_health"] >= 6
         assert any("실로그상 성과" in directive for directive in memory["policy_directives"])
+
+
+def test_cross_track_release_scheduler_staggers_platform_overlap():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        fixtures = [("track_a", "Munpia", 0.78, 0.10), ("track_b", "Munpia", 0.72, 0.12), ("track_c", "Munpia", 0.58, 0.27)]
+        for name, platform, retention, repetition in fixtures:
+            tdir = os.path.join(tracks_root, name)
+            os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+            with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+                json.dump({"project": {"platform": platform, "genre_bucket": "B"}}, f)
+            with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+                for _ in range(3):
+                    f.write(json.dumps({
+                        "meta": {"event_plan": {"type": "arrival"}},
+                        "content_ceiling": {"ceiling_total": 74},
+                        "retention": {"predicted_next_episode": retention},
+                        "scores": {"repetition_score": repetition},
+                    }) + "\n")
+        plan = build_cross_track_release_plan(tracks_root)
+        actions = {item["track"]: item["action"] for item in plan["release_plan"]}
+        state = {}
+        ensure_story_state(state, cfg={"project": {"platform": "Munpia", "genre_bucket": "B"}})
+        memory = update_portfolio_memory(state, cfg={"project": {"platform": "Munpia", "genre_bucket": "B"}}, tracks_root=tracks_root)
+
+        assert actions["track_a"] == "accelerate"
+        assert actions["track_c"] == "hold"
+        assert plan["interference_pressure"] >= 4
+        assert memory["release_strategy"] == "staggered"

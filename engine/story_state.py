@@ -268,6 +268,8 @@ def _default_story_state(bucket: str | None, outline: str) -> Dict[str, Any]:
             "novelty_guard": 5,
             "cadence_guard": 5,
             "release_guard": 5,
+            "release_strategy": "balanced",
+            "release_plan": [],
             "policy_directives": [],
         },
         "portfolio_metrics": {

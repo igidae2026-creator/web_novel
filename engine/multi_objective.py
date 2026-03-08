@@ -50,6 +50,8 @@ def build_multi_objective_scores(
     novelty_guard = float(portfolio_memory.get("novelty_guard", 5) or 5) / 10.0
     cadence_guard = float(portfolio_memory.get("cadence_guard", 5) or 5) / 10.0
     release_guard = float(portfolio_memory.get("release_guard", 5) or 5) / 10.0
+    release_strategy = str(portfolio_memory.get("release_strategy", "balanced") or "balanced")
+    release_plan = list(portfolio_memory.get("release_plan", []) or [])
     pattern_crowding = float(portfolio_metrics.get("pattern_crowding", 0) or 0) / 10.0
     cross_track_risk = float(portfolio_metrics.get("shared_risk", 0) or 0) / 10.0
     novelty_debt = float(portfolio_metrics.get("novelty_debt", 0) or 0) / 10.0
@@ -63,6 +65,11 @@ def build_multi_objective_scores(
         + release_guard * 0.10
         + (1.0 - cross_track_risk) * 0.10
     )
+    release_schedule_health = _clamp(
+        release_guard * 0.55
+        + (0.20 if release_strategy == "staggered" else 0.15 if release_strategy == "focused" else 0.10)
+        + min(0.20, len(release_plan) * 0.03)
+    )
 
     base_coherence = scores.get("coherence", scores.get("logic_score", 0.55)) * 0.7 + causal_score * 0.3
     base_pacing = scores.get("pacing_score", 0.5) * 0.7 + scores.get("hook_score", 0.5) * 0.3
@@ -74,15 +81,15 @@ def build_multi_objective_scores(
         "fun": _clamp(scores.get("hook_score", 0.5) * 0.55 + scores.get("escalation", 0.5) * 0.45),
         "coherence": _clamp(base_coherence + foresight * 0.05 + market_resonance * 0.02 + repair_confidence * 0.03 + closure_score * 0.05 + strategy_coverage * 0.05 + portfolio_fit * 0.03 + learning_confidence * 0.03 + portfolio_coordination * 0.03 - repair_penalty),
         "character_persuasiveness": _clamp(scores.get("character_score", 0.5) * 0.60 + scores.get("emotion_density", 0.5) * 0.18 + causal_report.get("checks", {}).get("goal_pressure", 0.0) * 0.12 + repair_confidence * 0.04 + closure_score * 0.06 + strategy_coverage * 0.04),
-        "pacing": _clamp(base_pacing + pressure_clock * 0.05 + exploration_bias * 0.03 + bingeability * 0.03 + repair_confidence * 0.02 + closure_score * 0.04 + diversity_pressure * 0.04 + cadence_guard * 0.03 + portfolio_coordination * 0.03 - max(0.0, cadence_pressure - 0.6) * 0.01),
-        "retention": _clamp(base_retention + pressure_clock * 0.05 + market_resonance * 0.05 + exploration_bias * 0.02 + bingeability * 0.03 + reader_trust * 0.03 + portfolio_fit * 0.05 + learning_confidence * 0.03 + release_guard * 0.03 + portfolio_coordination * 0.04 - max(0.0, release_interference - 0.6) * 0.01),
+        "pacing": _clamp(base_pacing + pressure_clock * 0.05 + exploration_bias * 0.03 + bingeability * 0.03 + repair_confidence * 0.02 + closure_score * 0.04 + diversity_pressure * 0.04 + cadence_guard * 0.03 + release_schedule_health * 0.05 + portfolio_coordination * 0.03 - max(0.0, cadence_pressure - 0.6) * 0.01),
+        "retention": _clamp(base_retention + pressure_clock * 0.05 + market_resonance * 0.05 + exploration_bias * 0.02 + bingeability * 0.03 + reader_trust * 0.03 + portfolio_fit * 0.05 + learning_confidence * 0.03 + release_guard * 0.03 + release_schedule_health * 0.075 + portfolio_coordination * 0.04 - max(0.0, release_interference - 0.6) * 0.01),
         "emotional_immersion": _clamp(scores.get("emotion_density", 0.5) * 0.7 + causal_report.get("checks", {}).get("emotional_trace", 0.0) * 0.3 + strategy_coverage * 0.06),
         "information_design": _clamp(float(information.get("dramatic_irony", 5)) / 10.0 * 0.18 + float(retention_state.get("information_gap", 5)) / 10.0 * 0.13 + causal_report.get("checks", {}).get("cliffhanger_alignment", 0.0) * 0.14 + exploration_bias * 0.08 + market_resonance * 0.15 + repair_confidence * 0.09 + closure_score * 0.09 + strategy_coverage * 0.11 + portfolio_fit * 0.05 + learning_confidence * 0.08 + novelty_guard * 0.04 + portfolio_coordination * 0.04 - repair_penalty * 0.5),
         "emotional_payoff": _clamp(scores.get("emotion_density", 0.5) * 0.75 + scores.get("payoff_score", 0.5) * 0.25 + portfolio_coordination * 0.02),
-        "long_run_sustainability": _clamp(float(serialization.get("sustainability", 5)) / 10.0 * 0.50 + float(rewards.get("expectation_alignment", 5)) / 10.0 * 0.15 + reader_trust * 0.10 + release_confidence * 0.07 + portfolio_fit * 0.07 + portfolio_coordination * 0.06 + strategy_coverage * 0.06 + cadence_guard * 0.02 + release_guard * 0.02 + (1.0 - shared_risk_alert) * 0.02 + (1.0 - novelty_debt) * 0.02 - max(0.0, cross_track_risk - 0.7) * 0.01),
+        "long_run_sustainability": _clamp(float(serialization.get("sustainability", 5)) / 10.0 * 0.49 + float(rewards.get("expectation_alignment", 5)) / 10.0 * 0.15 + reader_trust * 0.10 + release_confidence * 0.07 + portfolio_fit * 0.07 + portfolio_coordination * 0.06 + release_schedule_health * 0.075 + strategy_coverage * 0.06 + cadence_guard * 0.02 + release_guard * 0.02 + (1.0 - shared_risk_alert) * 0.02 + (1.0 - novelty_debt) * 0.02 - max(0.0, cross_track_risk - 0.7) * 0.01),
         "world_logic": _clamp(base_world_logic + foresight * 0.05),
         "chemistry": _clamp(float(serialization.get("chemistry_signal", 5)) / 10.0 * 0.6 + scores.get("chemistry_score", 0.5) * 0.4),
-        "stability": _clamp(base_stability + foresight * 0.05 + market_resonance * 0.05 + exploration_bias * 0.03 + release_confidence * 0.04 + repair_confidence * 0.03 + closure_score * 0.05 + strategy_coverage * 0.04 + portfolio_fit * 0.04 + learning_confidence * 0.05 + portfolio_coordination * 0.06 - overused_penalty - repair_penalty - shared_risk_alert * 0.03 - max(0.0, cross_track_risk - 0.6) * 0.02 - max(0.0, pattern_crowding - 0.6) * 0.01 - max(0.0, market_overlap - 0.6) * 0.01),
+        "stability": _clamp(base_stability + foresight * 0.05 + market_resonance * 0.05 + exploration_bias * 0.03 + release_confidence * 0.04 + repair_confidence * 0.03 + closure_score * 0.05 + strategy_coverage * 0.04 + portfolio_fit * 0.04 + learning_confidence * 0.05 + release_schedule_health * 0.06 + portfolio_coordination * 0.06 - overused_penalty - repair_penalty - shared_risk_alert * 0.03 - max(0.0, cross_track_risk - 0.6) * 0.02 - max(0.0, pattern_crowding - 0.6) * 0.01 - max(0.0, market_overlap - 0.6) * 0.01),
     }
     return objective
 

@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 from .portfolio_signals import compute_portfolio_signals
 from .portfolio_orchestrator import build_portfolio_runtime_snapshot
+from .cross_track_release import build_cross_track_release_plan
 from .story_state import ensure_story_state, sync_story_state
 from .track_loader import list_track_dirs
 
@@ -84,8 +85,10 @@ def update_portfolio_memory(
         portfolio_snapshot = learn_portfolio_snapshot(root)
         metrics.update(compute_portfolio_signals(root))
         runtime_snapshot = build_portfolio_runtime_snapshot(root)
+        release_snapshot = build_cross_track_release_plan(root)
     else:
         runtime_snapshot = {"tracks": [], "boost_ready_tracks": 0, "stable_tracks": 0, "mean_portfolio_score": 0.0}
+        release_snapshot = {"release_plan": [], "interference_pressure": 0, "platform_clusters": {}}
     portfolio_snapshot = list(portfolio_snapshot or [])
 
     event_type = str(event_plan.get("type", "")).strip()
@@ -149,6 +152,14 @@ def update_portfolio_memory(
         memory["learning_confidence"] = _clamp(memory["learning_confidence"] + int(mean_runtime_score >= 0.65) + int(boost_ready >= 2))
         memory["shared_risk_alert"] = _clamp(memory["shared_risk_alert"] - int(stable_tracks >= 2))
         memory["release_guard"] = _clamp(memory["release_guard"] + int(stable_tracks >= 2))
+    release_plan = list(release_snapshot.get("release_plan", []) or [])
+    interference_pressure = int(release_snapshot.get("interference_pressure", 0) or 0)
+    hold_tracks = sum(1 for item in release_plan if item.get("action") == "hold")
+    accelerate_tracks = sum(1 for item in release_plan if item.get("action") == "accelerate")
+    memory["release_strategy"] = "staggered" if interference_pressure >= 4 else "focused" if accelerate_tracks >= 1 else "balanced"
+    memory["release_plan"] = release_plan[:6]
+    memory["release_guard"] = _clamp(memory["release_guard"] + int(accelerate_tracks >= 1) - int(hold_tracks >= 2))
+    memory["shared_risk_alert"] = _clamp(memory["shared_risk_alert"] + int(interference_pressure >= 6))
     directives: List[str] = []
     if crowding >= 6 or novelty_debt >= 6:
         directives.append("과밀 이벤트 패턴을 피하고 변주 또는 대체 보상 구조를 선택한다")
@@ -158,6 +169,8 @@ def update_portfolio_memory(
         directives.append("회차 압축은 유지하되 연속 폭발 대신 완급을 섞어 연재 피로를 낮춘다")
     if release_interference >= 6 or market_overlap >= 6:
         directives.append("동일 시장 포지션과 출시 타이밍 충돌을 피하도록 차별적 훅과 관계 구도를 강조한다")
+    if interference_pressure >= 4:
+        directives.append("교차 트랙 릴리스 간섭을 낮추기 위해 강한 트랙은 선행 배치하고 나머지는 간격을 둔다")
     if not directives:
         directives.append("현재 포트폴리오 분산이 안정적이므로 강한 보상과 차별화를 함께 유지한다")
     if boost_ready >= 2:
@@ -187,6 +200,8 @@ def portfolio_prompt_payload(state: Dict[str, Any]) -> Dict[str, Any]:
         "novelty_guard": memory.get("novelty_guard", 0),
         "cadence_guard": memory.get("cadence_guard", 0),
         "release_guard": memory.get("release_guard", 0),
+        "release_strategy": memory.get("release_strategy", "balanced"),
+        "release_plan": memory.get("release_plan", [])[:4],
         "policy_directives": memory.get("policy_directives", [])[:4],
         "portfolio_metrics": story_state.get("portfolio_metrics", {}),
     }
