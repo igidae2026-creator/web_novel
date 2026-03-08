@@ -43,3 +43,9 @@ and should not create circular imports with `llm/` or `core/`.
 - added a structural cliffhanger generator and validator in `engine/cliffhanger_engine.py`
 - replaced cliffhanger length-only validation with withheld-consequence validation
 - upgraded content ceiling cliffhanger analysis to read structural cliffhanger and event metadata
+
+## 2026-03-09 Fun Engine Step 5
+
+- added `engine/tension_wave.py` to target spike / pressure / release bands instead of flat intensity
+- applied tension-wave control to generation knobs before drafting and exposed the wave state to prompts
+- added tests for spike targeting and post-episode peak tracking

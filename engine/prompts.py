@@ -72,6 +72,9 @@ class PROMPTS:
 클리프행어 계획:
 {(story_state or {}).get('cliffhanger', {})}
 
+텐션 파형:
+{(story_state or {}).get('tension', {})}
+
 외부 랭킹 관측치:
 {ext_snapshot}
 

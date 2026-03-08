@@ -18,6 +18,7 @@ from .intensity_lock import clamp_knobs, apply_freeze, register_change
 from .quality_gate import quality_gate
 from .event_generator import generate_event_plan, event_prompt_payload, register_story_event
 from .cliffhanger_engine import generate_cliffhanger_plan, enforce_cliffhanger
+from .tension_wave import prepare_tension_wave, apply_tension_wave, update_tension_wave, tension_prompt_payload
 
 def _internal_knobs(cfg: dict, episode: int) -> dict:
     nv = cfg["novel"]
@@ -187,6 +188,8 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     original_knobs = knobs.copy()
     knobs = _apply_platform_bias(cfg, knobs)
     knobs = _apply_external(cfg, knobs, ext, episode)
+    prepare_tension_wave(state.data, episode=episode)
+    knobs = apply_tension_wave(knobs, state.data.get("tension_wave", {}))
     knobs = damp_knobs(cfg, knobs, original_knobs)
     knobs = clamp_knobs(cfg, knobs)
     prof = select_profile(profiles, pj["platform"], pj["genre_bucket"])
@@ -209,6 +212,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "conflict": conflict_prompt_payload(state.data),
         "event": event_prompt_payload(event_plan),
         "cliffhanger": cliffhanger_plan,
+        "tension": tension_prompt_payload(state.data),
     }
 
     snap = ext.latest(pj["platform"], pj["genre_bucket"]) or {}
@@ -317,6 +321,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     register_story_event(state.data, event_plan)
     update_character_arc(state.data, episode, score_obj=score_obj, event_plan=event_plan)
     update_conflict_memory(state.data, episode, score_obj=score_obj, event_plan=event_plan)
+    update_tension_wave(state.data, episode, score_obj=score_obj, event_plan=event_plan)
     thresholds = cfg.get('quality',{})
     if not quality_gate(score_obj, thresholds):
         knobs['hook_intensity'] = min(0.99, knobs.get('hook_intensity',0.7)+0.1)
