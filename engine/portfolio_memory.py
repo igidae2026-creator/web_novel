@@ -88,7 +88,7 @@ def update_portfolio_memory(
         release_snapshot = build_cross_track_release_plan(root)
     else:
         runtime_snapshot = {"tracks": [], "boost_ready_tracks": 0, "stable_tracks": 0, "mean_portfolio_score": 0.0}
-        release_snapshot = {"release_plan": [], "interference_pressure": 0, "platform_clusters": {}}
+        release_snapshot = {"release_plan": [], "interference_pressure": 0, "platform_clusters": {}, "platform_slot_pressure": {}, "policy_directives": []}
     portfolio_snapshot = list(portfolio_snapshot or [])
 
     event_type = str(event_plan.get("type", "")).strip()
@@ -158,6 +158,8 @@ def update_portfolio_memory(
     accelerate_tracks = sum(1 for item in release_plan if item.get("action") == "accelerate")
     memory["release_strategy"] = "staggered" if interference_pressure >= 4 else "focused" if accelerate_tracks >= 1 else "balanced"
     memory["release_plan"] = release_plan[:6]
+    slot_pressure = dict(release_snapshot.get("platform_slot_pressure", {}) or {})
+    memory["platform_slot_pressure"] = max(slot_pressure.values()) if slot_pressure else 0
     memory["release_guard"] = _clamp(memory["release_guard"] + int(accelerate_tracks >= 1) - int(hold_tracks >= 2))
     memory["shared_risk_alert"] = _clamp(memory["shared_risk_alert"] + int(interference_pressure >= 6))
     directives: List[str] = []
@@ -171,10 +173,12 @@ def update_portfolio_memory(
         directives.append("동일 시장 포지션과 출시 타이밍 충돌을 피하도록 차별적 훅과 관계 구도를 강조한다")
     if interference_pressure >= 4:
         directives.append("교차 트랙 릴리스 간섭을 낮추기 위해 강한 트랙은 선행 배치하고 나머지는 간격을 둔다")
+    directives.extend([str(item) for item in list(release_snapshot.get("policy_directives", []) or [])[:2]])
     if not directives:
         directives.append("현재 포트폴리오 분산이 안정적이므로 강한 보상과 차별화를 함께 유지한다")
     if boost_ready >= 2:
         directives.append("실로그상 성과가 검증된 트랙에는 공격적 노출을, 피로 누적 트랙에는 안정화 운용을 적용한다")
+    memory["slot_policy_directives"] = [str(item) for item in list(release_snapshot.get("policy_directives", []) or [])[:4]]
     memory["policy_directives"] = directives[:4]
 
     state["story_state_v2"] = story_state
@@ -202,6 +206,8 @@ def portfolio_prompt_payload(state: Dict[str, Any]) -> Dict[str, Any]:
         "release_guard": memory.get("release_guard", 0),
         "release_strategy": memory.get("release_strategy", "balanced"),
         "release_plan": memory.get("release_plan", [])[:4],
+        "platform_slot_pressure": memory.get("platform_slot_pressure", 0),
+        "slot_policy_directives": memory.get("slot_policy_directives", [])[:4],
         "policy_directives": memory.get("policy_directives", [])[:4],
         "portfolio_metrics": story_state.get("portfolio_metrics", {}),
     }

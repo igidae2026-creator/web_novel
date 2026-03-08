@@ -22,7 +22,7 @@ from engine.causal_repair import (
 from engine.repair_diff_audit import audit_repair_diff
 from engine.portfolio_memory import learn_portfolio_snapshot, update_portfolio_memory, portfolio_prompt_payload
 from engine.portfolio_signals import compute_portfolio_signals
-from engine.regression_guard import portfolio_signal_decision
+from engine.regression_guard import portfolio_signal_decision, release_policy_decision
 from engine.portfolio_orchestrator import build_portfolio_runtime_snapshot, rebalance_platform
 from engine.cross_track_release import build_cross_track_release_plan
 from engine.cross_track_release import apply_queue_release_outcome, apply_runtime_release_to_state, refresh_queue_release_runtime, resolve_queue_release_action
@@ -517,6 +517,44 @@ def test_cross_track_release_scheduler_staggers_platform_overlap():
         assert actions["track_c"] == "hold"
         assert plan["interference_pressure"] >= 4
         assert memory["release_strategy"] == "staggered"
+
+
+def test_platform_release_policy_respects_slot_pressure():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        fixtures = [
+            ("track_a", "KakaoPage", 0.79, 0.10),
+            ("track_b", "KakaoPage", 0.78, 0.11),
+            ("track_c", "KakaoPage", 0.62, 0.25),
+        ]
+        for name, platform, retention, repetition in fixtures:
+            tdir = os.path.join(tracks_root, name)
+            os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+            with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+                json.dump({"project": {"platform": platform, "genre_bucket": "A"}}, f)
+            with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+                for _ in range(3):
+                    f.write(json.dumps({
+                        "meta": {"event_plan": {"type": "arrival"}},
+                        "content_ceiling": {"ceiling_total": 77},
+                        "retention": {"predicted_next_episode": retention},
+                        "scores": {"repetition_score": repetition},
+                    }) + "\n")
+        plan = build_cross_track_release_plan(tracks_root)
+        actions = {item["track"]: item["action"] for item in plan["release_plan"]}
+        state = {}
+        ensure_story_state(state, cfg={"project": {"platform": "KakaoPage", "genre_bucket": "A"}})
+        memory = update_portfolio_memory(state, cfg={"project": {"platform": "KakaoPage", "genre_bucket": "A"}}, tracks_root=tracks_root)
+        accepted, report = release_policy_decision({"platform_slot_pressure": 2, "release_guard": 5}, {"platform_slot_pressure": memory["platform_slot_pressure"], "release_guard": memory["release_guard"]})
+
+        assert actions["track_a"] == "accelerate"
+        assert actions["track_b"] == "stagger"
+        assert actions["track_c"] == "hold"
+        assert memory["platform_slot_pressure"] >= 1
+        assert any("KakaoPage" in directive for directive in memory["slot_policy_directives"])
+        assert accepted
+        assert not report["regressed_signals"]
 
 
 def test_release_runtime_schedule_changes_queue_behavior():

@@ -6,6 +6,13 @@ from typing import Any, Dict, List
 
 from .track_loader import list_track_dirs
 
+PLATFORM_RELEASE_POLICY = {
+    "Munpia": {"primary_slot_cap": 1, "accelerate_retention": 0.70, "fatigue_limit": 0.20, "cadence_floor": 1, "trust_bonus": 0.08},
+    "KakaoPage": {"primary_slot_cap": 1, "accelerate_retention": 0.76, "fatigue_limit": 0.18, "cadence_floor": 2, "trust_bonus": 0.10},
+    "NaverSeries": {"primary_slot_cap": 1, "accelerate_retention": 0.74, "fatigue_limit": 0.19, "cadence_floor": 2, "trust_bonus": 0.09},
+    "DEFAULT": {"primary_slot_cap": 1, "accelerate_retention": 0.72, "fatigue_limit": 0.20, "cadence_floor": 1, "trust_bonus": 0.07},
+}
+
 
 def _load_json(path: str) -> Dict[str, Any]:
     try:
@@ -38,6 +45,8 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
     tracks: List[Dict[str, Any]] = []
     for track_dir in list_track_dirs(tracks_root):
         track = _load_json(os.path.join(track_dir, "track.json"))
+        platform = (track.get("project", {}) or {}).get("platform", "UNKNOWN")
+        policy = PLATFORM_RELEASE_POLICY.get(str(platform), PLATFORM_RELEASE_POLICY["DEFAULT"])
         rows = _load_jsonl(os.path.join(track_dir, "outputs", "metrics.jsonl"))[-last_n:]
         if rows:
             mean_retention = sum(float((row.get("retention", {}) or {}).get("predicted_next_episode", 0.0) or 0.0) for row in rows) / len(rows)
@@ -48,23 +57,28 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
         tracks.append(
             {
                 "track": os.path.basename(track_dir),
-                "platform": (track.get("project", {}) or {}).get("platform", "UNKNOWN"),
+                "platform": platform,
                 "bucket": (track.get("project", {}) or {}).get("genre_bucket", "UNKNOWN"),
                 "mean_retention": mean_retention,
                 "fatigue": mean_repetition,
+                "policy": policy,
             }
         )
     tracks.sort(key=lambda item: (item["platform"], -item["mean_retention"], item["fatigue"], item["track"]))
     per_platform_slot: Dict[str, int] = {}
     release_plan: List[Dict[str, Any]] = []
     interference = 0
+    platform_slot_pressure: Dict[str, int] = {}
+    policy_directives: List[str] = []
     for track in tracks:
         platform = str(track["platform"])
+        policy = dict(track.get("policy", {}) or PLATFORM_RELEASE_POLICY["DEFAULT"])
         slot = per_platform_slot.get(platform, 0)
         per_platform_slot[platform] = slot + 1
-        if track["fatigue"] >= 0.24:
+        platform_slot_pressure[platform] = max(platform_slot_pressure.get(platform, 0), max(0, slot + 1 - int(policy.get("primary_slot_cap", 1) or 1)))
+        if track["fatigue"] >= float(policy.get("fatigue_limit", 0.20) or 0.20):
             action = "hold"
-        elif slot == 0 and track["mean_retention"] >= 0.68:
+        elif slot < int(policy.get("primary_slot_cap", 1) or 1) and track["mean_retention"] >= float(policy.get("accelerate_retention", 0.72) or 0.72):
             action = "accelerate"
         else:
             action = "stagger"
@@ -76,12 +90,24 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
                 "platform": platform,
                 "slot_offset": slot,
                 "action": action,
+                "cadence_floor": int(policy.get("cadence_floor", 1) or 1),
+                "slot_pressure": platform_slot_pressure[platform],
             }
         )
+        if platform_slot_pressure[platform] >= 1:
+            directive = f"{platform} 슬롯 과밀을 피하기 위해 강한 트랙도 동일 윈도우에 집중 배치하지 않는다"
+            if directive not in policy_directives:
+                policy_directives.append(directive)
+        if action == "hold":
+            directive = f"{platform}에서는 피로 누적 트랙의 신뢰 하락을 막기 위해 홀드 후 재배치한다"
+            if directive not in policy_directives:
+                policy_directives.append(directive)
     return {
         "release_plan": release_plan,
         "interference_pressure": min(10, interference * 2),
         "platform_clusters": {platform: count for platform, count in per_platform_slot.items()},
+        "platform_slot_pressure": platform_slot_pressure,
+        "policy_directives": policy_directives[:4],
     }
 
 

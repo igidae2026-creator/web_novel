@@ -128,3 +128,6 @@ The system does not locally maximize cliff intensity, reward density, or novelty
 - causal repair now runs as a bounded closed loop with retry budget, re-validation, closure scoring, and final accept/fail state
 - portfolio memory now ingests real track metrics logs and learns crowded/winning/fatigue patterns from observed outcomes
 - cross-track portfolio metrics are translated into coordination state and policy directives rather than only direct score penalties
+- post-repair diff audit now tracks targeted defect resolution, mismatch classes, and strategy effectiveness across retries
+- release scheduling is now enforced at runtime through queue-level accelerate/stagger/hold behavior instead of remaining a planning-only layer
+- platform-aware slot policy now feeds release planning with cadence floors, slot pressure, overlap avoidance, and trust-preserving hold rules
