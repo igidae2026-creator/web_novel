@@ -23,6 +23,8 @@ from .predictive_retention import build_retention_state, predict_retention, rete
 from .information_emotion import prepare_information_emotion, information_prompt_payload
 from .world_logic import update_world_state, world_prompt_payload
 from .reward_serialization import update_reward_serialization
+from .promise_graph import update_promise_payoff_graph
+from .episode_attribution import record_episode_attribution
 from .story_state import ensure_story_state
 from .multi_objective import build_multi_objective_scores, multi_objective_balance
 from .regression_guard import regression_decision
@@ -35,10 +37,13 @@ from .causal_repair import (
     build_causal_repair_plan,
     finalize_causal_repair_cycle,
     record_causal_repair_attempt,
+    record_repair_diff_audit,
     start_causal_repair_cycle,
     store_causal_repair_plan,
 )
 from .portfolio_memory import portfolio_prompt_payload, update_portfolio_memory
+from .reliability import simulate_long_run, update_system_status
+from .runtime_config import load_runtime_config_into_cfg, write_system_status_snapshot
 from analytics.content_ceiling import evaluate_episode
 
 def _internal_knobs(cfg: dict, episode: int) -> dict:
@@ -130,6 +135,8 @@ def ensure_project_dirs(cfg: dict) -> str:
     return out_dir
 
 def build_outline(cfg, state, llm, cost, ext: ExternalRankSignals):
+    cfg, runtime_cfg = load_runtime_config_into_cfg(cfg)
+    state.data["runtime_config"] = runtime_cfg
     pj = cfg["project"]
     sub_key = pj.get("sub_engine", "AUTO")
 
@@ -149,10 +156,12 @@ from .backup_manager import backup_file
 from .full_backup_manager import snapshot_project
 
 def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: int) -> dict:
+    cfg, runtime_cfg = load_runtime_config_into_cfg(cfg)
     pj = cfg["project"]
     out_dir = ensure_project_dirs(cfg)
     state.data['out_dir'] = out_dir
     state.data['_cfg_for_models'] = cfg
+    state.data["runtime_config"] = runtime_cfg
 
     # Competition/Reaction (26/30): update market snapshot in state
     latest_tp = None
@@ -301,6 +310,8 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
             viral_ok, _msg = validate_viral(cur_obj, cliffhanger_plan=cliffhanger_plan)
         if closure["passed"] and viral_ok:
             break
+        pre_rewrite_text = str(cur_obj.get("episode_text", ""))
+        pre_rewrite_report = dict(latest_causal_report or {})
         rewrite_prompt = PROMPTS.episode_rewrite_json(
             cfg, cur_obj, episode, knobs, style, sub_key, viral_required, story_state=story_state, repair_plan=latest_repair_plan
         )
@@ -325,6 +336,15 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
             state.data,
             attempt_index=attempt,
             causal_report=latest_causal_report,
+            repair_plan=latest_repair_plan,
+        )
+        record_repair_diff_audit(
+            state.data,
+            attempt_index=attempt,
+            pre_text=pre_rewrite_text,
+            post_text=str(cur_obj.get("episode_text", "")),
+            pre_report=pre_rewrite_report,
+            post_report=latest_causal_report,
             repair_plan=latest_repair_plan,
         )
         if attempt >= max_passes and not viral_required and assess_causal_closure(latest_causal_report, latest_repair_plan)["passed"]:
@@ -396,13 +416,41 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "scene_causality": causal_report,
     }
     content_ceiling = evaluate_episode(episode_text, ceiling_meta)
+    episode_attribution = record_episode_attribution(
+        state.data,
+        episode=episode,
+        episode_text=episode_text,
+        event_plan=event_plan,
+        cliffhanger_plan=cliffhanger_plan,
+        score_obj=score_obj,
+        retention_state=state.data.get("retention_engine", {}),
+        content_ceiling=content_ceiling,
+    )
     meta["content_ceiling"] = content_ceiling
+    meta["episode_attribution"] = episode_attribution
     meta["multi_objective"] = {
         "axes": objective_scores,
         "balance": objective_balance,
     }
+    system_status = update_system_status(
+        state.data,
+        episode=episode,
+        objective_scores=objective_scores,
+        portfolio_signals=state.data.get("story_state_v2", {}).get("portfolio_memory", {}),
+    )
+    write_system_status_snapshot(
+        system_status,
+        runtime_cfg=runtime_cfg,
+        out_dir=out_dir,
+        safe_mode=bool(cfg.get("safe_mode", False)),
+        project_dir_for_backup=out_dir,
+    )
+    simulation = simulate_long_run(objective_scores, state.data.get("story_state_v2", {}))
     meta["scene_causality"] = causal_report
     meta["causal_repair"] = repair_plan
+    meta["system_status"] = system_status
+    meta["simulation"] = simulation
+    meta["runtime_config"] = runtime_cfg
 
     # update score history
     hist = state.get("score_history", [])
@@ -438,6 +486,10 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
             "pressure_state": state.data.get("retention_engine", {}),
         },
         "content_ceiling": content_ceiling,
+        "episode_attribution": episode_attribution,
+        "system_status": system_status,
+        "simulation": simulation,
+        "runtime_config": runtime_cfg,
         "cost": cost.snapshot(),
     }
     if cfg["output"].get("save_metrics_jsonl", True):
@@ -450,6 +502,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     update_tension_wave(state.data, episode, score_obj=score_obj, event_plan=event_plan)
     update_world_state(state.data, episode, event_plan=event_plan)
     update_reward_serialization(state.data, episode, event_plan=event_plan)
+    update_promise_payoff_graph(state.data, episode, event_plan=event_plan, score_obj=score_obj)
     prepare_information_emotion(state.data, episode=episode, event_plan=event_plan)
     update_pattern_memory(state.data, episode=episode, event_plan=event_plan, cliffhanger_plan=cliffhanger_plan)
     update_market_serialization(state.data, episode=episode, cfg=cfg, event_plan=event_plan)

@@ -50,3 +50,13 @@ def portfolio_signal_decision(before: Dict[str, Any], after: Dict[str, Any]) -> 
     regressed = [key for key, delta in deltas.items() if delta > 0.5]
     accepted = len(regressed) == 0
     return accepted, {"accepted": accepted, "regressed_signals": regressed, "deltas": deltas}
+
+
+def release_policy_decision(before: Dict[str, Any], after: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+    deltas = {
+        "platform_slot_pressure": float(after.get("platform_slot_pressure", 0) or 0) - float(before.get("platform_slot_pressure", 0) or 0),
+        "release_guard": float(before.get("release_guard", 0) or 0) - float(after.get("release_guard", 0) or 0),
+    }
+    regressed = [key for key, delta in deltas.items() if delta > 0.5]
+    accepted = len(regressed) == 0
+    return accepted, {"accepted": accepted, "regressed_signals": regressed, "deltas": deltas}

@@ -128,3 +128,20 @@ The system does not locally maximize cliff intensity, reward density, or novelty
 - causal repair now runs as a bounded closed loop with retry budget, re-validation, closure scoring, and final accept/fail state
 - portfolio memory now ingests real track metrics logs and learns crowded/winning/fatigue patterns from observed outcomes
 - cross-track portfolio metrics are translated into coordination state and policy directives rather than only direct score penalties
+- post-repair diff audit now performs semantic scene-structure comparison, intent-preservation scoring, failure-type classification, and strategy effectiveness learning across retries
+- release scheduling is now enforced at runtime through queue-level accelerate/stagger/hold behavior instead of remaining a planning-only layer
+- runtime release outcomes now feed story-state learning for retention, pacing, trust, fatigue, and coordination so later release policy is shaped by executed results
+- platform-aware slot policy now uses adaptive outcome-weighted allocation with strong-window anti-monopoly guards instead of fixed retention ordering alone
+- promise/payoff state is now tracked as a cross-episode graph with unresolved debt, payoff integrity, and corruption detection feeding evaluation
+- episode-level attribution now records retention, pacing, fatigue, and payoff signals per episode for downstream repair and release decisions
+- release planning now reserves multiple future windows so strong tracks can claim high-value slots without monopolizing long-horizon opportunity
+- promise state now carries character-specific ownership and dependency edges, causal attribution now identifies high-impact scene units, and long-horizon allocation now accounts for platform seasonality across six windows
+# Streamlit Runtime Control
+
+The Streamlit entrypoint now acts as a lightweight control panel for the automated generation loop.
+
+- `runtime_config.json` is the runtime control file shared by Streamlit and the generation pipeline.
+- `engine.pipeline` loads `runtime_config.json` at episode generation startup and reflects active evaluation/runtime overrides in episode metadata.
+- `outputs/system_status.json` is written as a global runtime snapshot so dashboards can read current iteration state without opening per-track state files.
+- The Streamlit app can start or stop generation safely, update runtime knobs, inspect recent `metrics.jsonl` records, and preview the latest generated episode outputs across `tracks/*/outputs`.
+- CLI generation still works when Streamlit is not used because missing or default runtime config falls back to deterministic defaults.
