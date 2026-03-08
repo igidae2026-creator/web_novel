@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List
 
-from .regression_guard import evaluate_total_profile
+from .regression_guard import PROTECTED_AXES, evaluate_total_profile
 from .story_state import ensure_story_state, sync_story_state
 
 
@@ -39,6 +39,33 @@ def detect_quality_drift(
     }
 
 
+def detect_axis_drift(
+    axis_history: Dict[str, List[float]],
+    lookback: int = 5,
+    warning_drop: float = 0.04,
+) -> Dict[str, Any]:
+    history = {axis: [float(item) for item in list(values or [])] for axis, values in dict(axis_history or {}).items()}
+    drifted_axes = []
+    details: Dict[str, Any] = {}
+    for axis, values in history.items():
+        if len(values) < max(3, lookback):
+            continue
+        baseline_window = values[-lookback * 2:-lookback] or values[:-lookback]
+        recent_window = values[-lookback:]
+        baseline = _mean(baseline_window)
+        recent = _mean(recent_window)
+        drop = baseline - recent
+        details[axis] = {
+            "drop": round(drop, 4),
+            "baseline_window_mean": round(baseline, 4),
+            "recent_window_mean": round(recent, 4),
+            "warning": drop >= warning_drop,
+        }
+        if drop >= warning_drop:
+            drifted_axes.append(axis)
+    return {"drifted_axes": drifted_axes, "details": details}
+
+
 def update_system_status(
     state: Dict[str, Any],
     episode: int,
@@ -55,9 +82,11 @@ def update_system_status(
         {
             "iteration_state": "idle",
             "balanced_total_history": [],
+            "axis_history": {},
             "repair_rate_history": [],
             "portfolio_signal_history": [],
             "drift": {},
+            "axis_drift": {},
             "warnings": [],
             "rollback_signal": False,
         },
@@ -75,15 +104,23 @@ def update_system_status(
     }
     system_status["iteration_state"] = str(repair.get("status", runtime_release.get("action", "running")) or "running")
     system_status["balanced_total_history"] = (list(system_status.get("balanced_total_history", []) or []) + [round(profile["balanced_total"], 4)])[-24:]
+    axis_history = dict(system_status.get("axis_history", {}) or {})
+    for axis in PROTECTED_AXES:
+        axis_history[axis] = (list(axis_history.get(axis, []) or []) + [round(float(profile.get(axis, 0.0) or 0.0), 4)])[-24:]
+    system_status["axis_history"] = axis_history
     system_status["repair_rate_history"] = (list(system_status.get("repair_rate_history", []) or []) + [round(repair_rate, 4)])[-24:]
     system_status["portfolio_signal_history"] = (list(system_status.get("portfolio_signal_history", []) or []) + [portfolio_snapshot])[-24:]
     drift = detect_quality_drift(system_status["balanced_total_history"])
+    axis_drift = detect_axis_drift(system_status["axis_history"])
     warnings = list(system_status.get("warnings", []) or [])
     if drift.get("warning"):
         warnings.append({"episode": int(episode), "type": "quality_drift", "drop": drift.get("drop", 0.0)})
+    if axis_drift.get("drifted_axes"):
+        warnings.append({"episode": int(episode), "type": "axis_drift", "axes": list(axis_drift.get("drifted_axes", []))[:4]})
     system_status["warnings"] = warnings[-8:]
     system_status["drift"] = drift
-    system_status["rollback_signal"] = bool(drift.get("rollback_signal"))
+    system_status["axis_drift"] = axis_drift
+    system_status["rollback_signal"] = bool(drift.get("rollback_signal")) or bool(axis_drift.get("drifted_axes"))
     if portfolio_signals:
         system_status["latest_portfolio_signals"] = dict(portfolio_signals)
     state["system_status"] = system_status

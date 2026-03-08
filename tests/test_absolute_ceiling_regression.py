@@ -23,7 +23,7 @@ from engine.repair_diff_audit import audit_repair_diff
 from engine.promise_graph import update_promise_payoff_graph
 from engine.episode_attribution import build_episode_attribution, record_episode_attribution
 from engine.causal_attribution import build_scene_event_attribution
-from engine.reliability import detect_quality_drift, simulate_long_run, update_system_status
+from engine.reliability import detect_axis_drift, detect_quality_drift, simulate_long_run, update_system_status
 from engine.portfolio_memory import learn_portfolio_snapshot, update_portfolio_memory, portfolio_prompt_payload
 from engine.portfolio_signals import compute_portfolio_signals
 from engine.regression_guard import portfolio_signal_decision, release_policy_decision
@@ -999,6 +999,7 @@ def test_system_status_records_iteration_history_and_portfolio_signals():
     )
 
     assert status["balanced_total_history"]
+    assert status["axis_history"]["fun"]
     assert status["repair_rate_history"]
     assert status["portfolio_signal_history"][-1]["episode"] == 3
     assert state["system_status"]["latest_portfolio_signals"]["release_guard"] == 7
@@ -1010,3 +1011,16 @@ def test_quality_drift_detection_triggers_warning_and_rollback_signal():
 
     assert warning["warning"]
     assert severe["rollback_signal"]
+
+
+def test_axis_drift_detection_flags_protected_axis_erosion():
+    result = detect_axis_drift(
+        {
+            "fun": [0.82, 0.821, 0.819, 0.817, 0.816, 0.814],
+            "coherence": [0.84, 0.842, 0.841, 0.78, 0.776, 0.772],
+        },
+        lookback=3,
+    )
+
+    assert "coherence" in result["drifted_axes"]
+    assert "fun" not in result["drifted_axes"]

@@ -388,9 +388,11 @@ def _default_story_state(bucket: str | None, outline: str) -> Dict[str, Any]:
         "system_status": {
             "iteration_state": "idle",
             "balanced_total_history": [],
+            "axis_history": {},
             "repair_rate_history": [],
             "portfolio_signal_history": [],
             "drift": {},
+            "axis_drift": {},
             "warnings": [],
             "rollback_signal": False,
         },
