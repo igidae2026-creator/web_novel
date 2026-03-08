@@ -30,6 +30,7 @@ from engine.regression_guard import portfolio_signal_decision, release_policy_de
 from engine.portfolio_orchestrator import build_portfolio_runtime_snapshot, rebalance_platform
 from engine.cross_track_release import build_cross_track_release_plan
 from engine.cross_track_release import apply_queue_release_outcome, apply_runtime_release_to_state, build_runtime_release_learning_snapshot, learn_runtime_release_outcome_in_state, refresh_queue_release_runtime, resolve_queue_release_action
+from engine.runtime_config import list_latest_episodes, load_runtime_config, load_runtime_config_into_cfg, read_recent_metrics, save_runtime_config, write_system_status_snapshot
 import json
 import os
 import tempfile
@@ -1024,3 +1025,73 @@ def test_axis_drift_detection_flags_protected_axis_erosion():
 
     assert "coherence" in result["drifted_axes"]
     assert "fun" not in result["drifted_axes"]
+
+
+def test_runtime_config_roundtrip_and_pipeline_override_are_deterministic():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "runtime_config.json")
+        save_runtime_config(
+            {
+                "generation_enabled": False,
+                "track_count": 4,
+                "release_cadence": {"mode": "queue_loop", "steps_per_run": 2},
+                "portfolio": {"mode": "focused"},
+                "evaluation": {
+                    "max_revision_passes": 3,
+                    "causal_repair_retry_budget": 3,
+                    "viral_required": False,
+                },
+            },
+            path=path,
+        )
+        loaded = load_runtime_config(path)
+        merged, runtime_cfg = load_runtime_config_into_cfg(
+            {
+                "limits": {"max_revision_passes": 1, "causal_repair_retry_budget": 1},
+                "quality": {"viral_required": True},
+                "portfolio": {"mode": "balanced"},
+            },
+            path=path,
+        )
+
+        assert loaded["track_count"] == 4
+        assert runtime_cfg["generation_enabled"] is False
+        assert merged["limits"]["max_revision_passes"] == 3
+        assert merged["limits"]["causal_repair_retry_budget"] == 3
+        assert merged["quality"]["viral_required"] is False
+        assert merged["portfolio"]["mode"] == "focused"
+
+
+def test_system_status_snapshot_writes_global_and_local_outputs():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        global_path = os.path.join(tmpdir, "outputs", "system_status.json")
+        local_out_dir = os.path.join(tmpdir, "tracks", "alpha", "outputs")
+        payload = write_system_status_snapshot(
+            {"iteration_state": "running", "balanced_total_history": [0.82, 0.83]},
+            runtime_cfg={"generation_enabled": True, "track_count": 3},
+            path=global_path,
+            out_dir=local_out_dir,
+        )
+
+        assert payload["system_status"]["iteration_state"] == "running"
+        assert os.path.exists(global_path)
+        assert os.path.exists(os.path.join(local_out_dir, "system_status.json"))
+
+
+def test_runtime_dashboard_helpers_read_metrics_and_latest_episodes():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        output_dir = os.path.join(tracks_root, "track_a", "outputs")
+        os.makedirs(output_dir, exist_ok=True)
+        with open(os.path.join(output_dir, "episode_001.txt"), "w", encoding="utf-8") as f:
+            f.write("첫 번째 에피소드\n\n[META]\n{}")
+        with open(os.path.join(output_dir, "metrics.jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps({"episode": 1, "system_status": {"iteration_state": "running"}}) + "\n")
+            f.write(json.dumps({"episode": 2, "system_status": {"iteration_state": "running"}}) + "\n")
+
+        latest = list_latest_episodes(tracks_root=tracks_root, limit=3)
+        metrics = read_recent_metrics(os.path.join(output_dir, "metrics.jsonl"), limit=1)
+
+        assert latest
+        assert latest[0]["name"] == "episode_001.txt"
+        assert metrics[0]["episode"] == 2

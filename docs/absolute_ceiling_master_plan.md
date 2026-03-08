@@ -136,3 +136,12 @@ The system does not locally maximize cliff intensity, reward density, or novelty
 - episode-level attribution now records retention, pacing, fatigue, and payoff signals per episode for downstream repair and release decisions
 - release planning now reserves multiple future windows so strong tracks can claim high-value slots without monopolizing long-horizon opportunity
 - promise state now carries character-specific ownership and dependency edges, causal attribution now identifies high-impact scene units, and long-horizon allocation now accounts for platform seasonality across six windows
+# Streamlit Runtime Control
+
+The Streamlit entrypoint now acts as a lightweight control panel for the automated generation loop.
+
+- `runtime_config.json` is the runtime control file shared by Streamlit and the generation pipeline.
+- `engine.pipeline` loads `runtime_config.json` at episode generation startup and reflects active evaluation/runtime overrides in episode metadata.
+- `outputs/system_status.json` is written as a global runtime snapshot so dashboards can read current iteration state without opening per-track state files.
+- The Streamlit app can start or stop generation safely, update runtime knobs, inspect recent `metrics.jsonl` records, and preview the latest generated episode outputs across `tracks/*/outputs`.
+- CLI generation still works when Streamlit is not used because missing or default runtime config falls back to deterministic defaults.

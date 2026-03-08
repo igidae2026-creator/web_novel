@@ -13,15 +13,27 @@ from engine.ceiling import top_percent_from_rank, band_from_top_percent
 from engine.strategy import GENRE_SUBENGINES
 from engine.pipeline import build_outline, generate_episode, ensure_project_dirs
 from engine.io_utils import read_text
+from engine.runtime_config import (
+    DEFAULT_RUNTIME_CONFIG_PATH,
+    DEFAULT_SYSTEM_STATUS_PATH,
+    configured_loop_steps,
+    configured_track_count,
+    load_runtime_config,
+    load_runtime_config_into_cfg,
+    save_runtime_config,
+)
 
 from metaos_business.revenue_dashboard import render as render_revenue
 from metaos_business.campaign_dashboard import render as render_campaign
+from metaos_business.runtime_dashboard import render as render_runtime_dashboard
 
 st.set_page_config(page_title="METAOS FINAL", layout="wide")
 st.title("METAOS FINAL — Streamlit Only")
 
 CFG_PATH = "config.yaml"
+TRACKS_ROOT = os.path.join("domains", "webnovel", "tracks")
 cfg = load_config(CFG_PATH)
+runtime_cfg = load_runtime_config()
 
 if not os.getenv("OPENAI_API_KEY"):
     st.error("OPENAI_API_KEY 환경변수가 필요합니다.")
@@ -90,9 +102,86 @@ with st.sidebar:
     cfg.setdefault("track", {})
     cfg["track"]["id"] = st.text_input("Track ID", value=str(cfg["track"].get("id", default_track)))
 
+    st.divider()
+    st.subheader("Runtime Control")
+    runtime_track_count = st.number_input(
+        "Track count",
+        min_value=1,
+        max_value=54,
+        value=int(runtime_cfg.get("track_count", 6)),
+        step=1,
+    )
+    runtime_steps_per_run = st.number_input(
+        "Release cadence",
+        min_value=1,
+        max_value=20,
+        value=int(runtime_cfg.get("release_cadence", {}).get("steps_per_run", 1)),
+        step=1,
+    )
+    portfolio_modes = ["balanced", "focused", "explore"]
+    runtime_portfolio_mode = st.selectbox(
+        "Portfolio mode",
+        portfolio_modes,
+        index=portfolio_modes.index(str(runtime_cfg.get("portfolio", {}).get("mode", "balanced")))
+        if str(runtime_cfg.get("portfolio", {}).get("mode", "balanced")) in portfolio_modes
+        else 0,
+    )
+    runtime_generation_enabled = st.toggle(
+        "Generation enabled",
+        value=bool(runtime_cfg.get("generation_enabled", True)),
+    )
+    runtime_revision_passes = st.slider(
+        "Runtime revision passes",
+        1,
+        3,
+        int(runtime_cfg.get("evaluation", {}).get("max_revision_passes", cfg["limits"].get("max_revision_passes", 2))),
+        1,
+    )
+    runtime_repair_budget = st.slider(
+        "Runtime repair budget",
+        1,
+        4,
+        int(runtime_cfg.get("evaluation", {}).get("causal_repair_retry_budget", runtime_revision_passes)),
+        1,
+    )
+    runtime_viral_required = st.toggle(
+        "Runtime viral required",
+        value=bool(runtime_cfg.get("evaluation", {}).get("viral_required", cfg.get("quality", {}).get("viral_required", True))),
+    )
+
     if st.button("Save config.yaml"):
         save_config(CFG_PATH, cfg)
         st.success("Saved.")
+    if st.button("Save runtime_config.json"):
+        save_runtime_config(
+            {
+                "generation_enabled": bool(runtime_generation_enabled),
+                "track_count": int(runtime_track_count),
+                "release_cadence": {"mode": "queue_loop", "steps_per_run": int(runtime_steps_per_run)},
+                "portfolio": {"mode": runtime_portfolio_mode},
+                "evaluation": {
+                    "max_revision_passes": int(runtime_revision_passes),
+                    "causal_repair_retry_budget": int(runtime_repair_budget),
+                    "viral_required": bool(runtime_viral_required),
+                },
+            },
+            path=DEFAULT_RUNTIME_CONFIG_PATH,
+            safe_mode=bool(cfg.get("safe_mode", False)),
+            project_dir_for_backup="outputs",
+        )
+        st.success("Saved runtime_config.json")
+
+runtime_payload = {
+    "generation_enabled": bool(runtime_generation_enabled),
+    "track_count": int(runtime_track_count),
+    "release_cadence": {"mode": "queue_loop", "steps_per_run": int(runtime_steps_per_run)},
+    "portfolio": {"mode": runtime_portfolio_mode},
+    "evaluation": {
+        "max_revision_passes": int(runtime_revision_passes),
+        "causal_repair_retry_budget": int(runtime_repair_budget),
+        "viral_required": bool(runtime_viral_required),
+    },
+}
 
 out_dir = ensure_project_dirs(cfg)
 state_path = os.path.join(out_dir, "state.json")
@@ -131,6 +220,48 @@ with tabs[0]:
     left, right = st.columns([1,1])
     with left:
         st.subheader("Controls")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Start Generation"):
+                saved_runtime = save_runtime_config(
+                    dict(runtime_payload, generation_enabled=True),
+                    path=DEFAULT_RUNTIME_CONFIG_PATH,
+                    safe_mode=bool(cfg.get("safe_mode", False)),
+                    project_dir_for_backup=out_dir,
+                )
+                runtime_cfg_for_run, _ = load_runtime_config_into_cfg(cfg, DEFAULT_RUNTIME_CONFIG_PATH)
+                from engine.track_loader import list_track_dirs
+                from engine.track_loop import run_queue_loop
+                from engine.track_queue import start_queue
+                track_dirs = list_track_dirs(TRACKS_ROOT)
+                limited_track_dirs = track_dirs[: configured_track_count(saved_runtime, len(track_dirs) or 1)]
+                if limited_track_dirs:
+                    start_queue(track_dirs=limited_track_dirs, cfg=runtime_cfg_for_run)
+                    ok, msg = run_queue_loop(
+                        runtime_cfg_for_run,
+                        max_steps=configured_loop_steps(saved_runtime, default_steps=1),
+                    )
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.warning(msg)
+                else:
+                    next_ep = int(state.get("next_episode", 1))
+                    generate_episode(runtime_cfg_for_run, state, llm, cost, ext, next_ep)
+                    state.save()
+                    cost.write_summary()
+                    st.success(f"Episode {next_ep} saved.")
+        with c2:
+            if st.button("Stop Generation"):
+                save_runtime_config(
+                    dict(runtime_payload, generation_enabled=False),
+                    path=DEFAULT_RUNTIME_CONFIG_PATH,
+                    safe_mode=bool(cfg.get("safe_mode", False)),
+                    project_dir_for_backup=out_dir,
+                )
+                from engine.track_queue import pause_queue
+                pause_queue()
+                st.info("Generation paused.")
         if st.button("Reset state"):
             state.reset()
             st.success("Reset.")
@@ -154,6 +285,13 @@ with tabs[0]:
         st.subheader("Status")
         st.json(cost.snapshot())
         st.json(state.data)
+        render_runtime_dashboard(
+            system_status_path=DEFAULT_SYSTEM_STATUS_PATH,
+            metrics_path=os.path.join(out_dir, "metrics.jsonl"),
+            tracks_root=TRACKS_ROOT,
+            standalone_out_dir=out_dir,
+            limit=5,
+        )
         outline_path = os.path.join(out_dir, "outline.txt")
         if os.path.exists(outline_path):
             with st.expander("Outline preview", expanded=False):
@@ -281,7 +419,13 @@ with tabs[1]:
     st.divider()
     st.subheader("Auto Loop (Safe)")
     from engine.track_loop import run_queue_loop
-    steps = st.number_input("Steps per click", min_value=1, max_value=20, value=3, step=1)
+    steps = st.number_input(
+        "Steps per click",
+        min_value=1,
+        max_value=20,
+        value=configured_loop_steps(runtime_cfg, default_steps=3),
+        step=1,
+    )
     if st.button("Run Auto Loop (N steps)"):
         ok2, msg2 = run_queue_loop(cfg, max_steps=int(steps))
         (st.success(msg2) if ok2 else st.warning(msg2))
@@ -290,9 +434,8 @@ with tabs[1]:
         with st.expander("Queue History", expanded=False):
             st.json(json.load(open(hist_path, "r", encoding="utf-8")))
 
-    tracks_root = os.path.join("domains", "webnovel", "tracks")
     from engine.track_loader import list_track_dirs
-    track_dirs = list_track_dirs(tracks_root)
+    track_dirs = list_track_dirs(TRACKS_ROOT)
     chosen = st.selectbox("Track directory", ["(none)"] + track_dirs)
     if chosen != "(none)":
         cfg.setdefault("track", {})

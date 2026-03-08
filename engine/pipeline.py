@@ -43,6 +43,7 @@ from .causal_repair import (
 )
 from .portfolio_memory import portfolio_prompt_payload, update_portfolio_memory
 from .reliability import simulate_long_run, update_system_status
+from .runtime_config import load_runtime_config_into_cfg, write_system_status_snapshot
 from analytics.content_ceiling import evaluate_episode
 
 def _internal_knobs(cfg: dict, episode: int) -> dict:
@@ -134,6 +135,8 @@ def ensure_project_dirs(cfg: dict) -> str:
     return out_dir
 
 def build_outline(cfg, state, llm, cost, ext: ExternalRankSignals):
+    cfg, runtime_cfg = load_runtime_config_into_cfg(cfg)
+    state.data["runtime_config"] = runtime_cfg
     pj = cfg["project"]
     sub_key = pj.get("sub_engine", "AUTO")
 
@@ -153,10 +156,12 @@ from .backup_manager import backup_file
 from .full_backup_manager import snapshot_project
 
 def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: int) -> dict:
+    cfg, runtime_cfg = load_runtime_config_into_cfg(cfg)
     pj = cfg["project"]
     out_dir = ensure_project_dirs(cfg)
     state.data['out_dir'] = out_dir
     state.data['_cfg_for_models'] = cfg
+    state.data["runtime_config"] = runtime_cfg
 
     # Competition/Reaction (26/30): update market snapshot in state
     latest_tp = None
@@ -433,11 +438,19 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         objective_scores=objective_scores,
         portfolio_signals=state.data.get("story_state_v2", {}).get("portfolio_memory", {}),
     )
+    write_system_status_snapshot(
+        system_status,
+        runtime_cfg=runtime_cfg,
+        out_dir=out_dir,
+        safe_mode=bool(cfg.get("safe_mode", False)),
+        project_dir_for_backup=out_dir,
+    )
     simulation = simulate_long_run(objective_scores, state.data.get("story_state_v2", {}))
     meta["scene_causality"] = causal_report
     meta["causal_repair"] = repair_plan
     meta["system_status"] = system_status
     meta["simulation"] = simulation
+    meta["runtime_config"] = runtime_cfg
 
     # update score history
     hist = state.get("score_history", [])
@@ -476,6 +489,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "episode_attribution": episode_attribution,
         "system_status": system_status,
         "simulation": simulation,
+        "runtime_config": runtime_cfg,
         "cost": cost.snapshot(),
     }
     if cfg["output"].get("save_metrics_jsonl", True):

@@ -7,6 +7,7 @@ from engine.track_queue import load_queue_state, save_queue_state
 from engine.track_runner import run_queue_step
 from engine.portfolio_orchestrator import rebalance_platform
 from engine.cross_track_release import refresh_queue_release_runtime
+from engine.runtime_config import generation_enabled, load_runtime_config
 
 LOCK_PATH = os.path.join("domains","webnovel","tracks",".queue_lock")
 LOCK_TTL_SECONDS = 600  # 10 minutes
@@ -46,6 +47,14 @@ def _save_history(h: Dict[str, Any]):
 
 def run_queue_loop(cfg: Dict[str, Any], max_steps: int = 1) -> Tuple[bool, str]:
     require_safe_mode(cfg)
+    runtime_cfg = load_runtime_config()
+    if not generation_enabled(runtime_cfg):
+        q = load_queue_state()
+        if q.get("status") == "running":
+            q["status"] = "paused"
+            q["last_error"] = "Generation disabled in runtime_config.json"
+            save_queue_state(q)
+        return False, "Generation disabled in runtime_config.json"
     if not _lock_acquire():
         return False, "Queue loop already running (lock present)."
     try:
@@ -53,6 +62,10 @@ def run_queue_loop(cfg: Dict[str, Any], max_steps: int = 1) -> Tuple[bool, str]:
         msg_last = None
         ok_any = False
         for _ in range(max(1, int(max_steps))):
+            runtime_cfg = load_runtime_config()
+            if not generation_enabled(runtime_cfg):
+                msg_last = "Generation disabled in runtime_config.json"
+                break
             q = load_queue_state()
             if q.get("status") != "running":
                 msg_last = f"Queue not running (status={q.get('status')})"
