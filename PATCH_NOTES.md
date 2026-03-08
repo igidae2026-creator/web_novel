@@ -19,3 +19,9 @@ Because this layer is:
 - content-only
 - orthogonal to revenue/LLM/runtime
 and should not create circular imports with `llm/` or `core/`.
+
+## 2026-03-09 Fun Engine Step 1
+
+- replaced fixed 10-episode character stage ticking with a desire/fear/weakness engine in `engine/character_arc.py`
+- injected character state into episode planning, drafting, and rewrite prompts
+- added direct tests for pressure-based character state preparation and outcome-driven updates

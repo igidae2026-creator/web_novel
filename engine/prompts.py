@@ -46,7 +46,7 @@ class PROMPTS:
 """
 
     @staticmethod
-    def episode_plan(cfg: dict, outline: str, ep: int, knobs: dict, ext_snapshot: dict, fatigue_directive: str, sub_engine_key: str) -> str:
+    def episode_plan(cfg: dict, outline: str, ep: int, knobs: dict, ext_snapshot: dict, fatigue_directive: str, sub_engine_key: str, story_state: dict | None = None) -> str:
         pj = cfg["project"]
         nv = cfg["novel"]
         plat = PLATFORM_STRATEGY.get(pj["platform"], {})
@@ -59,6 +59,9 @@ class PROMPTS:
 
 현재 노브(knobs):
 {knobs}
+
+캐릭터 상태:
+{(story_state or {}).get('character', {})}
 
 외부 랭킹 관측치:
 {ext_snapshot}
@@ -74,10 +77,11 @@ class PROMPTS:
 - 각 씬: 목표/갈등/감정 변곡/전개/마무리 훅
 - 회차 전체 감정 변곡 3회 이상
 - 이전 회차 대비 갈등 단계 상승
+- 주인공의 욕망/공포/약점이 선택과 손실에 직접 반영되어야 함
 """
 
     @staticmethod
-    def episode_draft_json(cfg: dict, plan: str, ep: int, knobs: dict, style: StyleVector, sub_engine_key: str) -> str:
+    def episode_draft_json(cfg: dict, plan: str, ep: int, knobs: dict, style: StyleVector, sub_engine_key: str, story_state: dict | None = None) -> str:
         pj = cfg["project"]
         nv = cfg["novel"]
         plat = PLATFORM_STRATEGY.get(pj["platform"], {})
@@ -92,6 +96,9 @@ class PROMPTS:
 노브(knobs):
 {knobs}
 
+스토리 상태:
+{story_state or {}}
+
 문체/리듬 제약:
 {constraints_text(style)}\n자료 기반 제약(있으면 반영):\n{profile_constraints_text(knobs.get('profile'))}
 
@@ -103,6 +110,7 @@ class PROMPTS:
 - 감정 변곡 3회 이상
 - 반복 최소화
 - 마지막은 강한 클리프행어
+- 주인공은 욕망 때문에 움직이고 공포 때문에 망설이며 약점 때문에 비용을 치러야 한다
 - 본문 길이는 대략 {nv['words_per_episode_min']}~{nv['words_per_episode_max']}자 수준의 한국어 분량을 목표로 한다(토큰 언급 금지)
 
 출력 형식: STRICT JSON ONLY
@@ -115,7 +123,7 @@ class PROMPTS:
 """
 
     @staticmethod
-    def episode_rewrite_json(cfg: dict, draft_json: dict, ep: int, knobs: dict, style: StyleVector, sub_engine_key: str, viral_required: bool) -> str:
+    def episode_rewrite_json(cfg: dict, draft_json: dict, ep: int, knobs: dict, style: StyleVector, sub_engine_key: str, viral_required: bool, story_state: dict | None = None) -> str:
         pj = cfg["project"]
         nv = cfg["novel"]
         plat = PLATFORM_STRATEGY.get(pj["platform"], {})
@@ -129,6 +137,7 @@ class PROMPTS:
 - 갈등 단계 상승 강화
 - 대사 선명화
 - 감정 흐름 선명화
+- 주인공의 약점이 실제 위험과 손실 비용으로 드러나야 함
 - 문체/리듬 제약 준수
 - 클리프행어 강화
 - 바이럴 요소(quote_line/comment_hook/cliffhanger) 유지 또는 강화
@@ -137,6 +146,9 @@ class PROMPTS:
 페이싱: {plat.get('pacing','balanced')}
 노브(knobs):
 {knobs}
+
+스토리 상태:
+{story_state or {}}
 
 문체/리듬 제약:
 {constraints_text(style)}\n자료 기반 제약(있으면 반영):\n{profile_constraints_text(knobs.get('profile'))}

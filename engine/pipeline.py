@@ -9,6 +9,13 @@ from .viral import validate_viral
 from .json_parse import parse_json_strict
 from .prompts import PROMPTS
 from .profile import load_profiles, select_profile
+from .character_arc import prepare_character_arc, character_prompt_payload, update_character_arc
+from .conflict_memory import update_conflict_memory
+from .competition_model import update_competition_state
+from .market_policy_engine import apply_market_policy
+from .damping_controller import damp_knobs
+from .intensity_lock import clamp_knobs, apply_freeze, register_change
+from .quality_gate import quality_gate
 
 def _internal_knobs(cfg: dict, episode: int) -> dict:
     nv = cfg["novel"]
@@ -187,14 +194,26 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     knobs["fatigue_reset"] = fat_pack["needs_reset"]
     knobs["reset_level"] = fat_pack["reset_level"]
 
+    prepare_character_arc(state.data, cfg=cfg, outline=outline, episode=episode)
+    story_state = {"character": character_prompt_payload(state.data)}
+
     snap = ext.latest(pj["platform"], pj["genre_bucket"]) or {}
-    plan_prompt = PROMPTS.episode_plan(cfg, outline, episode, knobs, snap, fat_pack["directive"], sub_key)
+    plan_prompt = PROMPTS.episode_plan(
+        cfg,
+        outline,
+        episode,
+        knobs,
+        snap,
+        fat_pack["directive"],
+        sub_key,
+        story_state=story_state,
+    )
     plan_resp = llm.call(plan_prompt, temperature=0.35)
     cost.add_usage(plan_resp)
     plan = plan_resp.output_text
 
     # draft JSON
-    draft_prompt = PROMPTS.episode_draft_json(cfg, plan, episode, knobs, style, sub_key)
+    draft_prompt = PROMPTS.episode_draft_json(cfg, plan, episode, knobs, style, sub_key, story_state=story_state)
     draft_resp = llm.call(draft_prompt, temperature=0.78)
     cost.add_usage(draft_resp)
     ok, draft_obj = parse_json_strict(draft_resp.output_text)
@@ -206,7 +225,9 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     max_passes = int(cfg["limits"].get("max_revision_passes", 2))
     cur_obj = draft_obj
     for _ in range(max_passes):
-        rewrite_prompt = PROMPTS.episode_rewrite_json(cfg, cur_obj, episode, knobs, style, sub_key, viral_required)
+        rewrite_prompt = PROMPTS.episode_rewrite_json(
+            cfg, cur_obj, episode, knobs, style, sub_key, viral_required, story_state=story_state
+        )
         rewrite_resp = llm.call(rewrite_prompt, temperature=0.55)
         cost.add_usage(rewrite_resp)
         ok2, obj2 = parse_json_strict(rewrite_resp.output_text)
@@ -274,7 +295,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         append_jsonl(os.path.join(out_dir, "metrics.jsonl"), record, safe_mode=cfg.get("safe_mode", False), project_dir_for_backup=out_dir)
 
     # update state
-    update_character_arc(state.data, episode)
+    update_character_arc(state.data, episode, score_obj=score_obj)
     update_conflict_memory(state.data, episode)
     thresholds = cfg.get('quality',{})
     if not quality_gate(score_obj, thresholds):
