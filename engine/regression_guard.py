@@ -42,3 +42,11 @@ def regression_decision(before: Dict[str, Any], after: Dict[str, Any], tolerance
         "after": nxt,
         "dropped_axes": dropped_axes,
     }
+
+
+def portfolio_signal_decision(before: Dict[str, Any], after: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+    improving = ["pattern_crowding", "shared_risk", "novelty_debt", "cadence_pressure", "market_overlap", "release_timing_interference"]
+    deltas = {key: float(after.get(key, 0) or 0) - float(before.get(key, 0) or 0) for key in improving}
+    regressed = [key for key, delta in deltas.items() if delta > 0.5]
+    accepted = len(regressed) == 0
+    return accepted, {"accepted": accepted, "regressed_signals": regressed, "deltas": deltas}

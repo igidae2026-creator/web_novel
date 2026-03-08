@@ -19,6 +19,8 @@ from engine.causal_repair import (
     store_causal_repair_plan,
 )
 from engine.portfolio_memory import learn_portfolio_snapshot, update_portfolio_memory, portfolio_prompt_payload
+from engine.portfolio_signals import compute_portfolio_signals
+from engine.regression_guard import portfolio_signal_decision
 import json
 import os
 import tempfile
@@ -303,3 +305,46 @@ def test_portfolio_memory_learns_from_real_metrics_logs():
         assert snapshot[0]["winning_pattern"] == "betrayal"
         assert memory["learned_from_logs"] is True
         assert "betrayal" in memory["winning_patterns"]
+        assert memory["coordination_health"] >= 1
+        assert memory["policy_directives"]
+
+
+def test_portfolio_signals_compute_cross_track_pressure():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        for name, platform, event_type in [("track_a", "Munpia", "betrayal"), ("track_b", "Munpia", "betrayal"), ("track_c", "KakaoPage", "arrival")]:
+            tdir = os.path.join(tracks_root, name)
+            os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+            with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+                json.dump({"project": {"platform": platform, "genre_bucket": "B"}}, f)
+            rows = [{"meta": {"event_plan": {"type": event_type}}, "content_ceiling": {"ceiling_total": 64}, "retention": {"predicted_next_episode": 0.61}, "scores": {"repetition_score": 0.21}} for _ in range(2)]
+            with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+                for row in rows:
+                    f.write(json.dumps(row) + "\n")
+        signals = compute_portfolio_signals(tracks_root)
+        accepted, report = portfolio_signal_decision(
+            {"pattern_crowding": 2, "shared_risk": 2, "novelty_debt": 2, "cadence_pressure": 2, "market_overlap": 2, "release_timing_interference": 2},
+            signals,
+        )
+
+        assert signals["pattern_crowding"] >= 4
+        assert signals["market_overlap"] >= 3
+        assert not accepted
+        assert "pattern_crowding" in report["regressed_signals"] or "shared_risk" in report["regressed_signals"]
+
+
+def test_portfolio_prompt_payload_exposes_coordination_guards():
+    state = {}
+    ensure_story_state(state)
+    state["story_state_v2"]["portfolio_memory"]["coordination_health"] = 7
+    state["story_state_v2"]["portfolio_memory"]["novelty_guard"] = 8
+    state["story_state_v2"]["portfolio_memory"]["cadence_guard"] = 6
+    state["story_state_v2"]["portfolio_memory"]["release_guard"] = 5
+    state["story_state_v2"]["portfolio_memory"]["policy_directives"] = ["차별화 유지"]
+
+    payload = portfolio_prompt_payload(state)
+
+    assert payload["coordination_health"] == 7
+    assert payload["novelty_guard"] == 8
+    assert payload["policy_directives"] == ["차별화 유지"]

@@ -90,6 +90,9 @@ class PROMPTS:
 포트폴리오 메모리:
 {(story_state or {}).get('portfolio', {})}
 
+교차 트랙 지표:
+{((story_state or {}).get('portfolio', {}) or {}).get('portfolio_metrics', {})}
+
 외부 랭킹 관측치:
 {ext_snapshot}
 
@@ -109,6 +112,7 @@ class PROMPTS:
 - 최근 과사용 패턴을 반복하지 말고 변주를 만들 것
 - 플랫폼 페이싱, 유료구간 압력, 독자 신뢰를 해치지 않도록 연재형 보상 구조를 유지할 것
 - 다른 트랙에서 이미 과밀한 패턴은 피하고, 포트폴리오 차원의 차별화를 유지할 것
+- 포트폴리오 정책 지시가 있으면 우선 반영하고, 교차 트랙 간 위험 분산과 출시 간섭 완화를 함께 고려할 것
 """
 
     @staticmethod

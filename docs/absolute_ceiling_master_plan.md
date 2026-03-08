@@ -122,3 +122,9 @@ The system does not locally maximize cliff intensity, reward density, or novelty
 - explicit antagonist planner separate from protagonist pressure model
 - memory-guided adaptation loop beyond fixed-state heuristics
 - portfolio-level cross-track learning
+
+## Recent Architecture Extensions
+
+- causal repair now runs as a bounded closed loop with retry budget, re-validation, closure scoring, and final accept/fail state
+- portfolio memory now ingests real track metrics logs and learns crowded/winning/fatigue patterns from observed outcomes
+- cross-track portfolio metrics are translated into coordination state and policy directives rather than only direct score penalties

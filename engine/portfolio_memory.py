@@ -4,6 +4,7 @@ import json
 import os
 from typing import Any, Dict, List
 
+from .portfolio_signals import compute_portfolio_signals
 from .story_state import ensure_story_state, sync_story_state
 from .track_loader import list_track_dirs
 
@@ -72,6 +73,7 @@ def update_portfolio_memory(
 ) -> Dict[str, Any]:
     story_state = ensure_story_state(state, cfg=cfg)
     memory = story_state["portfolio_memory"]
+    metrics = story_state["portfolio_metrics"]
     pattern_memory = story_state["pattern_memory"]
     market = story_state["market"]
     serialization = story_state["serialization"]
@@ -79,6 +81,7 @@ def update_portfolio_memory(
     if portfolio_snapshot is None:
         root = tracks_root or os.path.join("domains", "webnovel", "tracks")
         portfolio_snapshot = learn_portfolio_snapshot(root)
+        metrics.update(compute_portfolio_signals(root))
     portfolio_snapshot = list(portfolio_snapshot or [])
 
     event_type = str(event_plan.get("type", "")).strip()
@@ -117,6 +120,34 @@ def update_portfolio_memory(
     memory["learning_confidence"] = _clamp(
         len(portfolio_snapshot) * 2 + sum(int(item.get("heat", 0) or 0) >= 7 for item in portfolio_snapshot)
     )
+    crowding = int(metrics.get("pattern_crowding", 0) or 0)
+    shared_risk = int(metrics.get("shared_risk", 0) or 0)
+    novelty_debt = int(metrics.get("novelty_debt", 0) or 0)
+    cadence_pressure = int(metrics.get("cadence_pressure", 0) or 0)
+    market_overlap = int(metrics.get("market_overlap", 0) or 0)
+    release_interference = int(metrics.get("release_timing_interference", 0) or 0)
+    memory["coordination_health"] = _clamp(
+        9
+        - (crowding + shared_risk + market_overlap) // 5
+        - max(0, cadence_pressure - 4) // 2
+        - max(0, release_interference - 4) // 2
+        + min(2, memory["learning_confidence"] // 4)
+    )
+    memory["novelty_guard"] = _clamp(10 - max(crowding, novelty_debt))
+    memory["cadence_guard"] = _clamp(10 - cadence_pressure)
+    memory["release_guard"] = _clamp(10 - max(release_interference, market_overlap))
+    directives: List[str] = []
+    if crowding >= 6 or novelty_debt >= 6:
+        directives.append("과밀 이벤트 패턴을 피하고 변주 또는 대체 보상 구조를 선택한다")
+    if shared_risk >= 6:
+        directives.append("여러 트랙이 같은 리스크 축에 몰리지 않도록 감정/사회/전략 위험을 분산한다")
+    if cadence_pressure >= 6:
+        directives.append("회차 압축은 유지하되 연속 폭발 대신 완급을 섞어 연재 피로를 낮춘다")
+    if release_interference >= 6 or market_overlap >= 6:
+        directives.append("동일 시장 포지션과 출시 타이밍 충돌을 피하도록 차별적 훅과 관계 구도를 강조한다")
+    if not directives:
+        directives.append("현재 포트폴리오 분산이 안정적이므로 강한 보상과 차별화를 함께 유지한다")
+    memory["policy_directives"] = directives[:4]
 
     state["story_state_v2"] = story_state
     sync_story_state(state)
@@ -137,4 +168,10 @@ def portfolio_prompt_payload(state: Dict[str, Any]) -> Dict[str, Any]:
         "learned_from_logs": memory.get("learned_from_logs", False),
         "learning_confidence": memory.get("learning_confidence", 0),
         "observed_tracks": memory.get("observed_tracks", 0),
+        "coordination_health": memory.get("coordination_health", 0),
+        "novelty_guard": memory.get("novelty_guard", 0),
+        "cadence_guard": memory.get("cadence_guard", 0),
+        "release_guard": memory.get("release_guard", 0),
+        "policy_directives": memory.get("policy_directives", [])[:4],
+        "portfolio_metrics": story_state.get("portfolio_metrics", {}),
     }

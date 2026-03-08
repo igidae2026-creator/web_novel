@@ -27,6 +27,7 @@ def build_multi_objective_scores(
     market = story_state.get("market", {})
     control = story_state.get("control", {})
     portfolio_memory = story_state.get("portfolio_memory", {})
+    portfolio_metrics = story_state.get("portfolio_metrics", {})
     causal_score = float(causal_report.get("score", 0.6) or 0.6)
     foresight = float(antagonist.get("foresight", 5) or 5) / 10.0
     pressure_clock = float(antagonist.get("pressure_clock", 5) or 5) / 10.0
@@ -44,6 +45,23 @@ def build_multi_objective_scores(
     diversity_pressure = float(portfolio_memory.get("diversity_pressure", 5) or 5) / 10.0
     shared_risk_alert = float(portfolio_memory.get("shared_risk_alert", 3) or 3) / 10.0
     learning_confidence = float(portfolio_memory.get("learning_confidence", 0) or 0) / 10.0
+    coordination_health = float(portfolio_memory.get("coordination_health", 5) or 5) / 10.0
+    novelty_guard = float(portfolio_memory.get("novelty_guard", 5) or 5) / 10.0
+    cadence_guard = float(portfolio_memory.get("cadence_guard", 5) or 5) / 10.0
+    release_guard = float(portfolio_memory.get("release_guard", 5) or 5) / 10.0
+    pattern_crowding = float(portfolio_metrics.get("pattern_crowding", 0) or 0) / 10.0
+    cross_track_risk = float(portfolio_metrics.get("shared_risk", 0) or 0) / 10.0
+    novelty_debt = float(portfolio_metrics.get("novelty_debt", 0) or 0) / 10.0
+    cadence_pressure = float(portfolio_metrics.get("cadence_pressure", 0) or 0) / 10.0
+    market_overlap = float(portfolio_metrics.get("market_overlap", 0) or 0) / 10.0
+    release_interference = float(portfolio_metrics.get("release_timing_interference", 0) or 0) / 10.0
+    portfolio_coordination = _clamp(
+        coordination_health * 0.45
+        + novelty_guard * 0.20
+        + cadence_guard * 0.15
+        + release_guard * 0.10
+        + (1.0 - cross_track_risk) * 0.10
+    )
 
     base_coherence = scores.get("coherence", scores.get("logic_score", 0.55)) * 0.7 + causal_score * 0.3
     base_pacing = scores.get("pacing_score", 0.5) * 0.7 + scores.get("hook_score", 0.5) * 0.3
@@ -53,17 +71,17 @@ def build_multi_objective_scores(
 
     objective = {
         "fun": _clamp(scores.get("hook_score", 0.5) * 0.55 + scores.get("escalation", 0.5) * 0.45),
-        "coherence": _clamp(base_coherence + foresight * 0.05 + market_resonance * 0.02 + repair_confidence * 0.03 + closure_score * 0.05 + portfolio_fit * 0.03 + learning_confidence * 0.03 - repair_penalty),
+        "coherence": _clamp(base_coherence + foresight * 0.05 + market_resonance * 0.02 + repair_confidence * 0.03 + closure_score * 0.05 + portfolio_fit * 0.03 + learning_confidence * 0.03 + portfolio_coordination * 0.03 - repair_penalty),
         "character_persuasiveness": _clamp(scores.get("character_score", 0.5) * 0.60 + scores.get("emotion_density", 0.5) * 0.18 + causal_report.get("checks", {}).get("goal_pressure", 0.0) * 0.12 + repair_confidence * 0.04 + closure_score * 0.06),
-        "pacing": _clamp(base_pacing + pressure_clock * 0.05 + exploration_bias * 0.03 + bingeability * 0.03 + repair_confidence * 0.02 + closure_score * 0.04 + diversity_pressure * 0.05),
-        "retention": _clamp(base_retention + pressure_clock * 0.05 + market_resonance * 0.05 + exploration_bias * 0.02 + bingeability * 0.03 + reader_trust * 0.03 + portfolio_fit * 0.05 + learning_confidence * 0.03),
+        "pacing": _clamp(base_pacing + pressure_clock * 0.05 + exploration_bias * 0.03 + bingeability * 0.03 + repair_confidence * 0.02 + closure_score * 0.04 + diversity_pressure * 0.04 + cadence_guard * 0.03 + portfolio_coordination * 0.03 - max(0.0, cadence_pressure - 0.6) * 0.01),
+        "retention": _clamp(base_retention + pressure_clock * 0.05 + market_resonance * 0.05 + exploration_bias * 0.02 + bingeability * 0.03 + reader_trust * 0.03 + portfolio_fit * 0.05 + learning_confidence * 0.03 + release_guard * 0.03 + portfolio_coordination * 0.04 - max(0.0, release_interference - 0.6) * 0.01),
         "emotional_immersion": _clamp(scores.get("emotion_density", 0.5) * 0.7 + causal_report.get("checks", {}).get("emotional_trace", 0.0) * 0.3),
-        "information_design": _clamp(float(information.get("dramatic_irony", 5)) / 10.0 * 0.18 + float(retention_state.get("information_gap", 5)) / 10.0 * 0.13 + causal_report.get("checks", {}).get("cliffhanger_alignment", 0.0) * 0.14 + exploration_bias * 0.08 + market_resonance * 0.15 + repair_confidence * 0.09 + closure_score * 0.09 + portfolio_fit * 0.05 + learning_confidence * 0.09 - repair_penalty * 0.5),
-        "emotional_payoff": _clamp(scores.get("emotion_density", 0.5) * 0.75 + scores.get("payoff_score", 0.5) * 0.25),
-        "long_run_sustainability": _clamp(float(serialization.get("sustainability", 5)) / 10.0 * 0.52 + float(rewards.get("expectation_alignment", 5)) / 10.0 * 0.18 + reader_trust * 0.10 + release_confidence * 0.06 + portfolio_fit * 0.12 + (1.0 - shared_risk_alert) * 0.04),
+        "information_design": _clamp(float(information.get("dramatic_irony", 5)) / 10.0 * 0.18 + float(retention_state.get("information_gap", 5)) / 10.0 * 0.13 + causal_report.get("checks", {}).get("cliffhanger_alignment", 0.0) * 0.14 + exploration_bias * 0.08 + market_resonance * 0.15 + repair_confidence * 0.09 + closure_score * 0.09 + portfolio_fit * 0.05 + learning_confidence * 0.08 + novelty_guard * 0.04 + portfolio_coordination * 0.04 - repair_penalty * 0.5),
+        "emotional_payoff": _clamp(scores.get("emotion_density", 0.5) * 0.75 + scores.get("payoff_score", 0.5) * 0.25 + portfolio_coordination * 0.02),
+        "long_run_sustainability": _clamp(float(serialization.get("sustainability", 5)) / 10.0 * 0.50 + float(rewards.get("expectation_alignment", 5)) / 10.0 * 0.15 + reader_trust * 0.10 + release_confidence * 0.07 + portfolio_fit * 0.08 + portfolio_coordination * 0.06 + cadence_guard * 0.02 + release_guard * 0.02 + (1.0 - shared_risk_alert) * 0.02 + (1.0 - novelty_debt) * 0.02 - max(0.0, cross_track_risk - 0.7) * 0.01),
         "world_logic": _clamp(base_world_logic + foresight * 0.05),
         "chemistry": _clamp(float(serialization.get("chemistry_signal", 5)) / 10.0 * 0.6 + scores.get("chemistry_score", 0.5) * 0.4),
-        "stability": _clamp(base_stability + foresight * 0.05 + market_resonance * 0.05 + exploration_bias * 0.04 + release_confidence * 0.04 + repair_confidence * 0.03 + closure_score * 0.05 + portfolio_fit * 0.04 + learning_confidence * 0.05 - overused_penalty - repair_penalty - shared_risk_alert * 0.05),
+        "stability": _clamp(base_stability + foresight * 0.05 + market_resonance * 0.05 + exploration_bias * 0.03 + release_confidence * 0.04 + repair_confidence * 0.03 + closure_score * 0.05 + portfolio_fit * 0.04 + learning_confidence * 0.05 + portfolio_coordination * 0.06 - overused_penalty - repair_penalty - shared_risk_alert * 0.03 - max(0.0, cross_track_risk - 0.6) * 0.02 - max(0.0, pattern_crowding - 0.6) * 0.01 - max(0.0, market_overlap - 0.6) * 0.01),
     }
     return objective
 

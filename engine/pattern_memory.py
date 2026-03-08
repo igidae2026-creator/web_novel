@@ -57,6 +57,16 @@ def choose_event_with_memory(state: Dict[str, Any], preferred: str, fallback: st
     overused.update(portfolio_memory.get("crowded_patterns", []) or [])
     exploration_bias = int(memory.get("exploration_bias", 4) or 4)
     fatigue_patterns = set(portfolio_memory.get("fatigue_patterns", []) or [])
+    portfolio_metrics = story_state.get("portfolio_metrics", {})
+    coordination_health = int(portfolio_memory.get("coordination_health", 5) or 5)
+    cadence_guard = int(portfolio_memory.get("cadence_guard", 5) or 5)
+    release_guard = int(portfolio_memory.get("release_guard", 5) or 5)
+    if int(portfolio_metrics.get("novelty_debt", 0) or 0) >= 6:
+        exploration_bias = max(exploration_bias, 7)
+    if coordination_health <= 4:
+        exploration_bias = max(exploration_bias, 6)
+    if cadence_guard <= 4 or release_guard <= 4:
+        exploration_bias = max(4, exploration_bias - 1)
 
     if preferred and preferred not in overused and preferred not in fatigue_patterns:
         return preferred
