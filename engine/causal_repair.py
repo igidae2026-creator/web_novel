@@ -173,6 +173,21 @@ def start_causal_repair_cycle(
                 "lexical_shift": 0.0,
                 "score_delta": 0.0,
                 "defect_resolution_score": 0.0,
+                "semantic_audit": {
+                    "pre_scene_signature": {"sentence_count": 0, "roles": [], "dominant_roles": [], "role_counts": {}},
+                    "post_scene_signature": {"sentence_count": 0, "roles": [], "dominant_roles": [], "role_counts": {}},
+                    "structure_overlap": 0.0,
+                    "intent_overlap": 0.0,
+                    "intent_preservation_score": 0.0,
+                    "semantic_failure_types": [],
+                    "semantic_failures": [],
+                    "semantic_repair_effectiveness": 0.0,
+                },
+            },
+            "semantic_audit": {
+                "intent_preservation_score": 0.0,
+                "semantic_failure_types": [],
+                "semantic_repair_effectiveness": 0.0,
             },
             "history": [],
         }
@@ -241,11 +256,17 @@ def record_repair_diff_audit(
     history = list(control.get("history", []) or [])
     if history and int(history[-1].get("attempt", -1)) == int(attempt_index):
         history[-1]["diff_audit"] = audit
+        history[-1]["semantic_audit"] = dict(audit.get("semantic_audit", {}) or {})
     control.update(
         {
             "defect_resolution_score": float(audit["defect_resolution_score"]),
             "strategy_effectiveness": effectiveness,
             "diff_audit": audit,
+            "semantic_audit": {
+                "intent_preservation_score": float((audit.get("semantic_audit", {}) or {}).get("intent_preservation_score", 0.0) or 0.0),
+                "semantic_failure_types": list((audit.get("semantic_audit", {}) or {}).get("semantic_failure_types", []) or [])[:4],
+                "semantic_repair_effectiveness": float((audit.get("semantic_audit", {}) or {}).get("semantic_repair_effectiveness", 0.0) or 0.0),
+            },
             "history": history[-6:],
         }
     )
@@ -283,6 +304,7 @@ def finalize_causal_repair_cycle(
             "failed_strategies": list(repair_plan.get("failed_strategies", control.get("failed_strategies", [])) or [])[:3],
             "next_strategy_shift": str(repair_plan.get("next_strategy_shift", control.get("next_strategy_shift", "")) or ""),
             "defect_resolution_score": max(float(control.get("defect_resolution_score", 0.0) or 0.0), float(status["closure_score"])),
+            "semantic_audit": dict(control.get("semantic_audit", {}) or {}),
         }
     )
     state["story_state_v2"] = story_state
@@ -308,6 +330,7 @@ def store_causal_repair_plan(state: Dict[str, Any], repair_plan: Dict[str, Any])
         "defect_resolution_score": float(prev.get("defect_resolution_score", 0.0) or 0.0),
         "strategy_effectiveness": dict(prev.get("strategy_effectiveness", {}) or {}),
         "diff_audit": dict(prev.get("diff_audit", {}) or {}),
+        "semantic_audit": dict(prev.get("semantic_audit", {}) or {}),
         "history": list(prev.get("history", []) or [])[-6:],
     }
     state["story_state_v2"] = story_state

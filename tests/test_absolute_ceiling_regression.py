@@ -25,7 +25,7 @@ from engine.portfolio_signals import compute_portfolio_signals
 from engine.regression_guard import portfolio_signal_decision, release_policy_decision
 from engine.portfolio_orchestrator import build_portfolio_runtime_snapshot, rebalance_platform
 from engine.cross_track_release import build_cross_track_release_plan
-from engine.cross_track_release import apply_queue_release_outcome, apply_runtime_release_to_state, refresh_queue_release_runtime, resolve_queue_release_action
+from engine.cross_track_release import apply_queue_release_outcome, apply_runtime_release_to_state, build_runtime_release_learning_snapshot, learn_runtime_release_outcome_in_state, refresh_queue_release_runtime, resolve_queue_release_action
 import json
 import os
 import tempfile
@@ -304,6 +304,60 @@ def test_repair_diff_audit_detects_unresolved_target_and_updates_effectiveness()
     assert audit["resolved_targets"] == ["causal_link"]
     assert state["story_state_v2"]["control"]["causal_repair"]["defect_resolution_score"] > 0.0
     assert state["story_state_v2"]["control"]["causal_repair"]["strategy_effectiveness"]
+    assert "semantic_audit" in state["story_state_v2"]["control"]["causal_repair"]
+
+
+def test_repair_diff_audit_detects_semantic_intent_loss_and_payoff_corruption():
+    audit = audit_repair_diff(
+        pre_text="황자는 조력자를 지키기 위해 금기를 어겼다. 그 대가로 세계의 규칙이 뒤틀렸고 둘의 신뢰는 무너졌다. 이제 약속했던 복수의 회수가 더 잔혹해졌다.",
+        post_text="황자는 문밖을 걸었다. 도시는 조용했고 사람들은 식사했다. 그는 별다른 생각 없이 다음 장소로 갔다.",
+        pre_report={"issues": ["causal_link", "world_consequence"], "score": 0.44},
+        post_report={"issues": ["causal_link", "world_consequence"], "score": 0.41},
+        repair_plan={"critical_issues": ["causal_link", "world_consequence"]},
+    )
+
+    semantic = audit["semantic_audit"]
+    assert audit["mismatch_type"] == "unresolved_target"
+    assert "intent_loss" in semantic["semantic_failure_types"]
+    assert "payoff_corruption" in semantic["semantic_failure_types"]
+    assert semantic["intent_preservation_score"] < 0.5
+
+
+def test_multi_objective_scores_reflect_semantic_repair_quality():
+    state = {}
+    ensure_story_state(state)
+    story_state = state["story_state_v2"]
+    base_scores = {
+        "hook_score": 0.78,
+        "escalation": 0.74,
+        "emotion_density": 0.69,
+        "coherence": 0.76,
+        "world_logic": 0.8,
+        "chemistry_score": 0.72,
+        "repetition_score": 0.15,
+        "character_score": 0.71,
+        "logic_score": 0.75,
+        "pacing_score": 0.73,
+        "payoff_score": 0.68,
+    }
+    retention = {"unresolved_thread_pressure": 7, "curiosity_debt": 7, "information_gap": 6}
+    causal = {"score": 0.8, "checks": {"world_consequence": 1.0, "goal_pressure": 1.0, "emotional_trace": 1.0, "cliffhanger_alignment": 1.0}}
+    story_state["control"]["causal_repair"]["semantic_audit"] = {
+        "intent_preservation_score": 0.82,
+        "semantic_failure_types": [],
+        "semantic_repair_effectiveness": 0.79,
+    }
+    strong = build_multi_objective_scores(base_scores, retention_state=retention, story_state=story_state, causal_report=causal)
+    story_state["control"]["causal_repair"]["semantic_audit"] = {
+        "intent_preservation_score": 0.28,
+        "semantic_failure_types": ["intent_loss", "payoff_corruption"],
+        "semantic_repair_effectiveness": 0.22,
+    }
+    weak = build_multi_objective_scores(base_scores, retention_state=retention, story_state=story_state, causal_report=causal)
+
+    assert strong["coherence"] > weak["coherence"]
+    assert strong["character_persuasiveness"] > weak["character_persuasiveness"]
+    assert strong["stability"] > weak["stability"]
 
 
 def test_repair_diff_audit_marks_resolved_when_targeted_defects_clear():
@@ -595,3 +649,83 @@ def test_runtime_release_alignment_updates_story_state():
     assert runtime["action"] == "accelerate"
     assert state["story_state_v2"]["portfolio_memory"]["release_strategy"] == "focused"
     assert state["story_state_v2"]["portfolio_memory"]["release_guard"] >= 6
+
+
+def test_runtime_release_outcome_learning_updates_story_state_memory():
+    state = {}
+    ensure_story_state(state)
+    learning = learn_runtime_release_outcome_in_state(
+        state,
+        {
+            "action": "accelerate",
+            "alignment": 0.88,
+            "slot_offset": 0,
+            "success_signal": 0.84,
+            "retention_signal": 0.82,
+            "pacing_signal": 0.76,
+            "trust_signal": 0.8,
+            "fatigue_signal": 0.12,
+            "coordination_signal": 0.78,
+            "strong_window": 1.0,
+        },
+    )
+
+    memory = state["story_state_v2"]["portfolio_memory"]
+    assert learning["observed"] == 1
+    assert memory["runtime_release_learning"]["action_scores"]["accelerate"] > 0.5
+    assert memory["runtime_outcome_memory"]["retention_signal"] >= 0.8
+    assert state["story_state_v2"]["control"]["runtime_release"]["outcome_history"]
+
+
+def test_runtime_release_learning_snapshot_reads_real_outcome_logs():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        track_dir = os.path.join(tracks_root, "track_a")
+        os.makedirs(os.path.join(track_dir, "outputs"), exist_ok=True)
+        with open(os.path.join(track_dir, "track.json"), "w", encoding="utf-8") as f:
+            json.dump({"project": {"platform": "Munpia", "genre_bucket": "B"}}, f)
+        with open(os.path.join(track_dir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+            for row in [
+                {"runtime_outcome": {"success_signal": 0.82, "retention_signal": 0.8, "pacing_signal": 0.76, "trust_signal": 0.78, "fatigue_signal": 0.11, "coordination_signal": 0.74, "strong_window": 1.0}},
+                {"runtime_outcome": {"success_signal": 0.76, "retention_signal": 0.74, "pacing_signal": 0.72, "trust_signal": 0.73, "fatigue_signal": 0.09, "coordination_signal": 0.71, "strong_window": 0.0}},
+            ]:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+        snapshot = build_runtime_release_learning_snapshot(tracks_root)
+        assert snapshot["track_outcomes"]["track_a"]["observed"] == 2
+        assert snapshot["platform_outcomes"]["Munpia"]["success"] >= 0.75
+
+
+def test_adaptive_slot_allocator_uses_outcomes_and_prevents_monopoly():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        fixtures = [
+            ("track_a", 0.78, 0.10, [{"success_signal": 0.9, "retention_signal": 0.86, "pacing_signal": 0.77, "trust_signal": 0.82, "fatigue_signal": 0.10, "coordination_signal": 0.75, "strong_window": 1.0} for _ in range(3)]),
+            ("track_b", 0.75, 0.09, [{"success_signal": 0.83, "retention_signal": 0.81, "pacing_signal": 0.75, "trust_signal": 0.8, "fatigue_signal": 0.08, "coordination_signal": 0.78, "strong_window": 0.0} for _ in range(2)]),
+            ("track_c", 0.61, 0.26, [{"success_signal": 0.52, "retention_signal": 0.49, "pacing_signal": 0.66, "trust_signal": 0.58, "fatigue_signal": 0.24, "coordination_signal": 0.62, "strong_window": 0.0}]),
+        ]
+        for name, retention, repetition, outcomes in fixtures:
+            tdir = os.path.join(tracks_root, name)
+            os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+            with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+                json.dump({"project": {"platform": "KakaoPage", "genre_bucket": "A"}}, f)
+            with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+                for _ in range(3):
+                    f.write(json.dumps({
+                        "meta": {"event_plan": {"type": "arrival"}},
+                        "content_ceiling": {"ceiling_total": 76},
+                        "retention": {"predicted_next_episode": retention},
+                        "scores": {"repetition_score": repetition},
+                    }) + "\n")
+                for outcome in outcomes:
+                    f.write(json.dumps({"runtime_outcome": outcome}, ensure_ascii=False) + "\n")
+        plan = build_cross_track_release_plan(tracks_root)
+        actions = {item["track"]: item["action"] for item in plan["release_plan"]}
+        slot0 = next(item for item in plan["release_plan"] if item["slot_offset"] == 0)
+
+        assert actions["track_a"] == "stagger"
+        assert actions["track_b"] == "accelerate"
+        assert actions["track_c"] == "hold"
+        assert slot0["track"] == "track_b"

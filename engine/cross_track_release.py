@@ -13,6 +13,17 @@ PLATFORM_RELEASE_POLICY = {
     "DEFAULT": {"primary_slot_cap": 1, "accelerate_retention": 0.72, "fatigue_limit": 0.20, "cadence_floor": 1, "trust_bonus": 0.07},
 }
 
+DEFAULT_OUTCOME_MEMORY = {
+    "observed": 0,
+    "success": 0.0,
+    "retention_lift": 0.0,
+    "pacing_health": 0.0,
+    "trust": 0.0,
+    "fatigue": 0.0,
+    "coordination": 0.0,
+    "window_wins": 0.0,
+}
+
 
 def _load_json(path: str) -> Dict[str, Any]:
     try:
@@ -41,19 +52,80 @@ def _load_jsonl(path: str) -> List[Dict[str, Any]]:
     return rows
 
 
+def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
+    return max(low, min(high, float(value)))
+
+
+def _track_runtime_outcome_memory(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    outcomes = [row.get("runtime_outcome") for row in rows if isinstance(row, dict) and isinstance(row.get("runtime_outcome"), dict)]
+    if not outcomes:
+        return dict(DEFAULT_OUTCOME_MEMORY)
+    observed = len(outcomes)
+    return {
+        "observed": observed,
+        "success": round(sum(float(item.get("success_signal", 0.0) or 0.0) for item in outcomes) / observed, 4),
+        "retention_lift": round(sum(float(item.get("retention_signal", 0.0) or 0.0) for item in outcomes) / observed, 4),
+        "pacing_health": round(sum(float(item.get("pacing_signal", 0.0) or 0.0) for item in outcomes) / observed, 4),
+        "trust": round(sum(float(item.get("trust_signal", 0.0) or 0.0) for item in outcomes) / observed, 4),
+        "fatigue": round(sum(float(item.get("fatigue_signal", 0.0) or 0.0) for item in outcomes) / observed, 4),
+        "coordination": round(sum(float(item.get("coordination_signal", 0.0) or 0.0) for item in outcomes) / observed, 4),
+        "window_wins": round(sum(float(item.get("strong_window", 0.0) or 0.0) for item in outcomes), 4),
+    }
+
+
+def build_runtime_release_learning_snapshot(tracks_root: str, last_n: int = 8) -> Dict[str, Any]:
+    by_track: Dict[str, Dict[str, Any]] = {}
+    by_platform: Dict[str, Dict[str, float]] = {}
+    for track_dir in list_track_dirs(tracks_root):
+        track = _load_json(os.path.join(track_dir, "track.json"))
+        platform = str((track.get("project", {}) or {}).get("platform", "UNKNOWN") or "UNKNOWN")
+        rows = _load_jsonl(os.path.join(track_dir, "outputs", "metrics.jsonl"))[-last_n * 3:]
+        memory = _track_runtime_outcome_memory(rows)
+        track_key = os.path.basename(track_dir)
+        by_track[track_key] = memory
+        platform_memory = by_platform.setdefault(platform, {"success": 0.0, "trust": 0.0, "fatigue": 0.0, "coordination": 0.0, "observed": 0.0})
+        platform_memory["success"] += float(memory["success"])
+        platform_memory["trust"] += float(memory["trust"])
+        platform_memory["fatigue"] += float(memory["fatigue"])
+        platform_memory["coordination"] += float(memory["coordination"])
+        platform_memory["observed"] += 1.0 if memory["observed"] else 0.0
+    for platform, memory in by_platform.items():
+        observed = max(1.0, float(memory.get("observed", 0.0) or 0.0))
+        memory["success"] = round(memory["success"] / observed, 4)
+        memory["trust"] = round(memory["trust"] / observed, 4)
+        memory["fatigue"] = round(memory["fatigue"] / observed, 4)
+        memory["coordination"] = round(memory["coordination"] / observed, 4)
+        memory["observed"] = int(observed)
+    return {"track_outcomes": by_track, "platform_outcomes": by_platform}
+
+
 def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[str, Any]:
+    runtime_learning = build_runtime_release_learning_snapshot(tracks_root, last_n=last_n)
     tracks: List[Dict[str, Any]] = []
     for track_dir in list_track_dirs(tracks_root):
         track = _load_json(os.path.join(track_dir, "track.json"))
         platform = (track.get("project", {}) or {}).get("platform", "UNKNOWN")
         policy = PLATFORM_RELEASE_POLICY.get(str(platform), PLATFORM_RELEASE_POLICY["DEFAULT"])
         rows = _load_jsonl(os.path.join(track_dir, "outputs", "metrics.jsonl"))[-last_n:]
+        track_learning = dict(runtime_learning.get("track_outcomes", {}).get(os.path.basename(track_dir), DEFAULT_OUTCOME_MEMORY) or DEFAULT_OUTCOME_MEMORY)
+        platform_learning = dict(runtime_learning.get("platform_outcomes", {}).get(str(platform), {}) or {})
         if rows:
             mean_retention = sum(float((row.get("retention", {}) or {}).get("predicted_next_episode", 0.0) or 0.0) for row in rows) / len(rows)
             mean_repetition = sum(float((row.get("scores", {}) or {}).get("repetition_score", 0.0) or 0.0) for row in rows) / len(rows)
         else:
             mean_retention = 0.0
             mean_repetition = 0.0
+        adaptive_score = (
+            mean_retention * 0.44
+            + float(track_learning.get("success", 0.0) or 0.0) * 0.20
+            + float(track_learning.get("trust", 0.0) or 0.0) * 0.10
+            + float(track_learning.get("coordination", 0.0) or 0.0) * 0.08
+            + float(track_learning.get("retention_lift", 0.0) or 0.0) * 0.08
+            + float(platform_learning.get("success", 0.0) or 0.0) * 0.05
+            - mean_repetition * 0.24
+            - float(track_learning.get("fatigue", 0.0) or 0.0) * 0.12
+            - min(0.35, float(track_learning.get("window_wins", 0.0) or 0.0) * 0.08)
+        )
         tracks.append(
             {
                 "track": os.path.basename(track_dir),
@@ -62,9 +134,11 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
                 "mean_retention": mean_retention,
                 "fatigue": mean_repetition,
                 "policy": policy,
+                "adaptive_score": round(adaptive_score, 4),
+                "runtime_learning": track_learning,
             }
         )
-    tracks.sort(key=lambda item: (item["platform"], -item["mean_retention"], item["fatigue"], item["track"]))
+    tracks.sort(key=lambda item: (item["platform"], -item["adaptive_score"], -item["mean_retention"], item["fatigue"], item["track"]))
     per_platform_slot: Dict[str, int] = {}
     release_plan: List[Dict[str, Any]] = []
     interference = 0
@@ -76,14 +150,22 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
         slot = per_platform_slot.get(platform, 0)
         per_platform_slot[platform] = slot + 1
         platform_slot_pressure[platform] = max(platform_slot_pressure.get(platform, 0), max(0, slot + 1 - int(policy.get("primary_slot_cap", 1) or 1)))
-        if track["fatigue"] >= float(policy.get("fatigue_limit", 0.20) or 0.20):
+        learned_fatigue = float((track.get("runtime_learning", {}) or {}).get("fatigue", 0.0) or 0.0)
+        learned_success = float((track.get("runtime_learning", {}) or {}).get("success", 0.0) or 0.0)
+        learned_trust = float((track.get("runtime_learning", {}) or {}).get("trust", 0.0) or 0.0)
+        monopoly_risk = float((track.get("runtime_learning", {}) or {}).get("window_wins", 0.0) or 0.0)
+        if track["fatigue"] + learned_fatigue * 0.25 >= float(policy.get("fatigue_limit", 0.20) or 0.20):
             action = "hold"
-        elif slot < int(policy.get("primary_slot_cap", 1) or 1) and track["mean_retention"] >= float(policy.get("accelerate_retention", 0.72) or 0.72):
+        elif slot < int(policy.get("primary_slot_cap", 1) or 1) and track["mean_retention"] + learned_success * 0.08 >= float(policy.get("accelerate_retention", 0.72) or 0.72) and monopoly_risk < 2.2:
+            action = "accelerate"
+        elif slot == 0 and learned_trust >= 0.72 and learned_success >= 0.68:
             action = "accelerate"
         else:
             action = "stagger"
         if slot >= 1:
             interference += 1
+        if slot == 0 and monopoly_risk >= 2.2 and action == "accelerate":
+            action = "stagger"
         release_plan.append(
             {
                 "track": track["track"],
@@ -92,6 +174,8 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
                 "action": action,
                 "cadence_floor": int(policy.get("cadence_floor", 1) or 1),
                 "slot_pressure": platform_slot_pressure[platform],
+                "adaptive_score": track["adaptive_score"],
+                "runtime_learning": dict(track.get("runtime_learning", {}) or {}),
             }
         )
         if platform_slot_pressure[platform] >= 1:
@@ -102,12 +186,17 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
             directive = f"{platform}에서는 피로 누적 트랙의 신뢰 하락을 막기 위해 홀드 후 재배치한다"
             if directive not in policy_directives:
                 policy_directives.append(directive)
+        if monopoly_risk >= 2.2:
+            directive = f"{platform} 강세 트랙 독점을 막기 위해 최근 강창구 승리 기록이 높은 트랙은 우선 stagger로 완충한다"
+            if directive not in policy_directives:
+                policy_directives.append(directive)
     return {
         "release_plan": release_plan,
         "interference_pressure": min(10, interference * 2),
         "platform_clusters": {platform: count for platform, count in per_platform_slot.items()},
         "platform_slot_pressure": platform_slot_pressure,
         "policy_directives": policy_directives[:4],
+        "runtime_learning": runtime_learning,
     }
 
 
@@ -168,6 +257,31 @@ def apply_queue_release_outcome(queue_state: Dict[str, Any], track_dir: str, exe
     else:
         alignment = 0.7
     runtime[key] = entry
+    success_signal = _clamp(
+        alignment * 0.55
+        + (0.20 if action == "accelerate" and executed else 0.14 if action == "hold" and not executed else 0.12)
+        - min(0.15, int(entry.get("slot_offset", 0) or 0) * 0.05)
+    )
+    retention_signal = _clamp(alignment * 0.7 + (0.12 if action == "accelerate" and executed else 0.08 if action == "stagger" else 0.10))
+    pacing_signal = _clamp(0.68 if action == "hold" else 0.74 if action == "stagger" else 0.8 - int(entry.get("executed", 0) or 0) * 0.04)
+    trust_signal = _clamp(alignment * 0.65 + (0.14 if action == "hold" else 0.08 if action == "stagger" else 0.10))
+    fatigue_signal = _clamp((0.18 if action == "accelerate" and executed else 0.08 if action == "stagger" else 0.04) + int(entry.get("executed", 0) or 0) * 0.03)
+    coordination_signal = _clamp(0.78 - int(entry.get("slot_offset", 0) or 0) * 0.08 + (0.04 if action != "accelerate" else 0.0))
+    strong_window = 1.0 if action == "accelerate" and int(entry.get("slot_offset", 0) or 0) == 0 else 0.0
+    runtime_outcome = {
+        "track": key,
+        "action": action,
+        "alignment": alignment,
+        "executed": bool(executed),
+        "slot_offset": int(entry.get("slot_offset", 0) or 0),
+        "success_signal": round(success_signal, 4),
+        "retention_signal": round(retention_signal, 4),
+        "pacing_signal": round(pacing_signal, 4),
+        "trust_signal": round(trust_signal, 4),
+        "fatigue_signal": round(fatigue_signal, 4),
+        "coordination_signal": round(coordination_signal, 4),
+        "strong_window": strong_window,
+    }
     queue_state["release_runtime"] = runtime
     queue_state["last_release_action"] = {
         "track": key,
@@ -176,7 +290,14 @@ def apply_queue_release_outcome(queue_state: Dict[str, Any], track_dir: str, exe
         "executed": bool(executed),
         "slot_offset": int(entry.get("slot_offset", 0) or 0),
     }
-    return {"queue_state": queue_state, "should_advance": should_advance, "runtime_action": queue_state["last_release_action"]}
+    history = list(queue_state.get("release_outcomes", []) or [])
+    history.append(runtime_outcome)
+    queue_state["release_outcomes"] = history[-24:]
+    queue_state["runtime_release_learning"] = {
+        "observed": len(queue_state["release_outcomes"]),
+        "latest_outcome": runtime_outcome,
+    }
+    return {"queue_state": queue_state, "should_advance": should_advance, "runtime_action": queue_state["last_release_action"], "runtime_outcome": runtime_outcome}
 
 
 def apply_runtime_release_to_state(state_data: Dict[str, Any], runtime_action: Dict[str, Any]) -> Dict[str, Any]:
@@ -204,3 +325,54 @@ def apply_runtime_release_to_state(state_data: Dict[str, Any], runtime_action: D
     memory["release_strategy"] = "focused" if runtime["action"] == "accelerate" else "staggered" if runtime["action"] == "hold" else memory.get("release_strategy", "balanced")
     memory["release_guard"] = min(10, max(0, int(memory.get("release_guard", 5) or 5) + int(runtime["alignment"] >= 0.75)))
     return runtime
+
+
+def learn_runtime_release_outcome_in_state(state_data: Dict[str, Any], runtime_outcome: Dict[str, Any]) -> Dict[str, Any]:
+    story_state = state_data.setdefault("story_state_v2", {})
+    control = story_state.setdefault("control", {})
+    runtime = control.setdefault("runtime_release", {
+        "action": "balanced",
+        "alignment": 0.0,
+        "slot_offset": 0,
+        "hold_budget": 0,
+        "accelerate_budget": 0,
+        "history": [],
+        "outcome_history": [],
+    })
+    memory = story_state.setdefault("portfolio_memory", {})
+    learning = dict(memory.get("runtime_release_learning", {}) or {})
+    action_scores = dict(learning.get("action_scores", {"accelerate": 0.5, "stagger": 0.5, "hold": 0.5}) or {"accelerate": 0.5, "stagger": 0.5, "hold": 0.5})
+    observed = int(learning.get("observed", 0) or 0) + 1
+    action = str(runtime_outcome.get("action", "stagger") or "stagger")
+    success_signal = float(runtime_outcome.get("success_signal", 0.0) or 0.0)
+    prior_action_score = float(action_scores.get(action, 0.5) or 0.5)
+    action_scores[action] = round(prior_action_score * 0.7 + success_signal * 0.3, 4)
+    blend = 0.0 if observed == 1 else 0.65
+    learning.update(
+        {
+            "observed": observed,
+            "action_scores": action_scores,
+            "retention_signal": round(float(learning.get("retention_signal", 0.0) or 0.0) * blend + float(runtime_outcome.get("retention_signal", 0.0) or 0.0) * (1.0 - blend), 4),
+            "pacing_signal": round(float(learning.get("pacing_signal", 0.0) or 0.0) * blend + float(runtime_outcome.get("pacing_signal", 0.0) or 0.0) * (1.0 - blend), 4),
+            "trust_signal": round(float(learning.get("trust_signal", 0.0) or 0.0) * blend + float(runtime_outcome.get("trust_signal", 0.0) or 0.0) * (1.0 - blend), 4),
+            "fatigue_signal": round(float(learning.get("fatigue_signal", 0.0) or 0.0) * blend + float(runtime_outcome.get("fatigue_signal", 0.0) or 0.0) * (1.0 - blend), 4),
+            "coordination_signal": round(float(learning.get("coordination_signal", 0.0) or 0.0) * blend + float(runtime_outcome.get("coordination_signal", 0.0) or 0.0) * (1.0 - blend), 4),
+            "last_outcome": dict(runtime_outcome),
+        }
+    )
+    memory["runtime_release_learning"] = learning
+    memory["runtime_outcome_memory"] = {
+        "retention_signal": learning["retention_signal"],
+        "pacing_signal": learning["pacing_signal"],
+        "trust_signal": learning["trust_signal"],
+        "fatigue_signal": learning["fatigue_signal"],
+        "coordination_signal": learning["coordination_signal"],
+        "observed": observed,
+    }
+    memory["release_guard"] = min(10, max(0, int(memory.get("release_guard", 5) or 5) + int(learning["trust_signal"] >= 0.72) - int(learning["fatigue_signal"] >= 0.22)))
+    memory["cadence_guard"] = min(10, max(0, int(memory.get("cadence_guard", 5) or 5) + int(learning["pacing_signal"] >= 0.72) - int(learning["fatigue_signal"] >= 0.24)))
+    memory["coordination_health"] = min(10, max(0, int(memory.get("coordination_health", 5) or 5) + int(learning["coordination_signal"] >= 0.72) - int(int(runtime_outcome.get("slot_offset", 0) or 0) >= 2)))
+    if learning["fatigue_signal"] >= 0.22 and memory.get("release_strategy") == "focused":
+        memory["release_strategy"] = "balanced"
+    runtime["outcome_history"] = (list(runtime.get("outcome_history", []) or []) + [dict(runtime_outcome)])[-8:]
+    return learning

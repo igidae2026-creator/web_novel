@@ -8,7 +8,7 @@ from engine.openai_client import LLM
 from engine.cost import CostTracker
 from engine.external_rank import ExternalRankSignals
 from engine.pipeline import generate_episode, ensure_project_dirs
-from engine.cross_track_release import apply_queue_release_outcome, apply_runtime_release_to_state, refresh_queue_release_runtime, resolve_queue_release_action
+from engine.cross_track_release import apply_queue_release_outcome, apply_runtime_release_to_state, learn_runtime_release_outcome_in_state, refresh_queue_release_runtime, resolve_queue_release_action
 
 MAX_TRACK_ERRORS = 3
 from engine.safe_guard import UnsafeOperationError, require_safe_mode
@@ -62,10 +62,12 @@ def run_queue_step(cfg: Dict[str, Any]) -> Tuple[bool, str]:
 
         if runtime_entry.get("action") == "hold":
             outcome = apply_queue_release_outcome(q, tdir, executed=False)
+            learn_runtime_release_outcome_in_state(state.data, outcome["runtime_outcome"])
+            state.save()
             save_queue_state(outcome["queue_state"])
             append_jsonl(
                 os.path.join(tdir, 'outputs', 'metrics.jsonl'),
-                {"type": "queue_step_skipped", "track": os.path.basename(tdir), "reason": "release_hold", "runtime_release": outcome["runtime_action"]},
+                {"type": "queue_step_skipped", "track": os.path.basename(tdir), "reason": "release_hold", "runtime_release": outcome["runtime_action"], "runtime_outcome": outcome["runtime_outcome"]},
                 safe_mode=bool(merged.get('safe_mode', False)),
                 project_dir_for_backup=tdir,
             )
@@ -83,9 +85,11 @@ def run_queue_step(cfg: Dict[str, Any]) -> Tuple[bool, str]:
 
         # Advance queue
         outcome = apply_queue_release_outcome(q, tdir, executed=True)
+        learn_runtime_release_outcome_in_state(state.data, outcome["runtime_outcome"])
+        state.save()
         save_queue_state(outcome["queue_state"])
         append_jsonl(os.path.join(tdir, 'outputs', 'metrics.jsonl'),
-    {"type":"queue_step","track":os.path.basename(tdir),"episode":ep,"runtime_release": outcome["runtime_action"]},
+    {"type":"queue_step","track":os.path.basename(tdir),"episode":ep,"runtime_release": outcome["runtime_action"], "runtime_outcome": outcome["runtime_outcome"]},
     safe_mode=bool(merged.get('safe_mode', False)), project_dir_for_backup=tdir)
         if outcome["should_advance"]:
             advance(outcome["queue_state"])
