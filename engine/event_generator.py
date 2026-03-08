@@ -15,15 +15,23 @@ def _choose_type(state: Dict[str, Any], episode: int) -> str:
     character = story_state.get("cast", {}).get("protagonist", {})
     world = story_state.get("world", {})
     rewards = story_state.get("rewards", {})
+    antagonist = story_state.get("antagonist", {})
     recent = _recent_events(state)
     consequence = int(conflict.get("consequence_level", 5) or 5)
     urgency = int(character.get("urgency", 6) or 6)
     mode = str(conflict.get("escalation_mode", "complication"))
     instability = int(world.get("instability", 4) or 4)
     reward_density = int(rewards.get("reward_density", 5) or 5)
+    next_move = str(antagonist.get("next_move", ""))
 
     if mode in {"irreversible_stakes", "sacrifice"} and "sacrifice" not in recent:
         return "sacrifice"
+    if "불신" in next_move and "misunderstanding" not in recent:
+        return "misunderstanding"
+    if "타이머" in next_move and "timer" not in recent:
+        return "timer"
+    if "주도권" in next_move and "power_shift" not in recent:
+        return "power_shift"
     if mode in {"sacrifice", "collateral_damage"} and "loss" not in recent:
         return "loss"
     if mode == "power_reversal" and "reversal" not in recent:
@@ -72,6 +80,7 @@ def generate_event_plan(state: Dict[str, Any], episode: int) -> Dict[str, Any]:
     threat_pressure = int(conflict.get("threat_pressure", 5) or 5)
     urgency = int(character.get("urgency", 6) or 6)
     chemistry = int(story_state.get("serialization", {}).get("chemistry_signal", 5) or 5)
+    antagonist_move = str(story_state.get("antagonist", {}).get("next_move", "") or "")
 
     consequence_map = {
         "reveal": "숨겨진 정보가 드러나며 기존 선택의 비용이 올라간다",
@@ -110,6 +119,7 @@ def generate_event_plan(state: Dict[str, Any], episode: int) -> Dict[str, Any]:
         "carryover_pressure": min(10, max(consequence_level, threat_pressure, urgency, chemistry)),
         "heat": min(10, int(target_thread.get("heat", 5) or 5) + 1),
         "irreversible_if_lost": target_thread.get("irreversible_if_lost", "핵심 관계 또는 세계 질서가 변형된다"),
+        "antagonist_move": antagonist_move,
     }
 
     state["event_plan"] = plan

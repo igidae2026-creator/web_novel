@@ -257,5 +257,6 @@ def character_prompt_payload(state: Dict[str, Any]) -> Dict[str, Any]:
             "protagonist_rival": relationships["protagonist:rival"],
             "protagonist_ally": relationships["protagonist:ally"],
         },
+        "antagonist_pressure": state["story_state_v2"].get("antagonist", {}),
         "episode_focus": arcs.get("episode_focus", {}),
     }

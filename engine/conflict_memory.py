@@ -41,12 +41,13 @@ def prepare_conflict_memory(state: Dict[str, Any], episode: int) -> Dict[str, An
     protagonist = story_state["cast"]["protagonist"]
     relationships = story_state["relationships"]
     world = story_state["world"]
+    antagonist = story_state.get("antagonist", {})
     pressure_seed = int(protagonist.get("urgency", 5) >= 8)
 
-    engine["threat_pressure"] = _clamp(4 + len(open_threads_list) + weak_episodes + pressure_seed + int(world.get("instability", 4) >= 6))
+    engine["threat_pressure"] = _clamp(4 + len(open_threads_list) + weak_episodes + pressure_seed + int(world.get("instability", 4) >= 6) + int(antagonist.get("pressure_clock", 4) >= 6))
     engine["consequence_level"] = _clamp(3 + max((thread.get("heat", 0) for thread in open_threads_list), default=3) // 2 + int(world.get("change_rate", 3) >= 5))
     recent_losses = sum(1 for event in story_state["history"]["events"][-5:] if event in {"loss", "collapse", "sacrifice"})
-    engine["opposition_advantage"] = _clamp(3 + weak_episodes + recent_losses + max(0, -relationships["protagonist:rival"]["charge"]) // 4)
+    engine["opposition_advantage"] = _clamp(3 + weak_episodes + recent_losses + max(0, -relationships["protagonist:rival"]["charge"]) // 4 + int(antagonist.get("foresight", 5) >= 7))
     engine["payoff_debt"] = _clamp(engine.get("payoff_debt", 3) + max(0, len(open_threads_list) - 1))
     engine["risk_distribution"]["social"] = _clamp(relationships["protagonist:ally"]["relationship_debt"] + 3)
     engine["risk_distribution"]["strategic"] = _clamp(engine["opposition_advantage"] + 2)

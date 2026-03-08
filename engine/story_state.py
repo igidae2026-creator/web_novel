@@ -177,6 +177,19 @@ def _default_story_state(bucket: str | None, outline: str) -> Dict[str, Any]:
             "escalation_mode": "complication",
             "tension_reservoir": 6,
         },
+        "antagonist": {
+            "master_intent": "주인공이 스스로 관계와 권력을 잃는 선택을 하게 만든다",
+            "campaign_phase": "probing",
+            "next_move": "주인공의 약점을 시험한다",
+            "contingency": "직접 충돌이 실패하면 조력자를 흔든다",
+            "pressure_clock": 4,
+            "foresight": 6,
+            "horizon_beats": [
+                "주인공의 약점을 대중 앞에 드러낸다",
+                "조력자와 주인공 사이에 불신을 심는다",
+                "힘의 규칙을 자신에게 유리하게 재정의한다",
+            ],
+        },
         "unresolved_threads": [
             {
                 "id": "main-survival-thread",

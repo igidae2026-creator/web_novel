@@ -6,6 +6,7 @@ from engine.multi_objective import build_multi_objective_scores
 from engine.regression_guard import regression_decision
 from engine.predictive_retention import build_retention_state, predict_retention
 from engine.scene_causality import validate_scene_causality
+from engine.antagonist_planner import prepare_antagonist_plan, antagonist_prompt_payload
 
 
 def test_information_asymmetry_promotes_reveal_structure():
@@ -124,3 +125,15 @@ def test_scene_causality_distinguishes_linked_from_unlinked_scene():
 
     assert coherent["score"] > incoherent["score"]
     assert "causal_link" in incoherent["issues"]
+
+
+def test_antagonist_plan_builds_long_horizon_pressure():
+    state = {}
+    ensure_story_state(state)
+    state["story_state_v2"]["relationships"]["protagonist:ally"]["trust"] = 3
+    plan = prepare_antagonist_plan(state, episode=8, event_plan={"type": "betrayal"})
+    payload = antagonist_prompt_payload(state)
+
+    assert plan["campaign_phase"] in {"positioning", "constriction", "domination", "collapse_harvest", "probing"}
+    assert "불신" in payload["next_move"] or "주도권" in payload["next_move"] or "규칙" in payload["next_move"]
+    assert len(payload["horizon_beats"]) == 3

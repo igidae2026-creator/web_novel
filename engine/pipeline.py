@@ -27,6 +27,7 @@ from .story_state import ensure_story_state
 from .multi_objective import build_multi_objective_scores, multi_objective_balance
 from .regression_guard import regression_decision
 from .scene_causality import validate_scene_causality
+from .antagonist_planner import prepare_antagonist_plan, antagonist_prompt_payload
 from analytics.content_ceiling import evaluate_episode
 
 def _internal_knobs(cfg: dict, episode: int) -> dict:
@@ -211,7 +212,9 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
 
     prepare_character_arc(state.data, cfg=cfg, outline=outline, episode=episode)
     prepare_conflict_memory(state.data, episode=episode)
+    prepare_antagonist_plan(state.data, episode=episode)
     event_plan = generate_event_plan(state.data, episode=episode)
+    prepare_antagonist_plan(state.data, episode=episode, event_plan=event_plan)
     prepare_information_emotion(state.data, episode=episode, event_plan=event_plan)
     cliffhanger_plan = generate_cliffhanger_plan(
         character_prompt_payload(state.data),
@@ -228,6 +231,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "retention": retention_prompt_payload(state.data),
         "information": information_prompt_payload(state.data),
         "world": world_prompt_payload(state.data),
+        "antagonist": antagonist_prompt_payload(state.data),
     }
 
     snap = ext.latest(pj["platform"], pj["genre_bucket"]) or {}
