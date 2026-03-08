@@ -30,7 +30,14 @@ from .scene_causality import validate_scene_causality
 from .antagonist_planner import prepare_antagonist_plan, antagonist_prompt_payload
 from .pattern_memory import update_pattern_memory, pattern_prompt_payload
 from .market_serialization import market_prompt_payload, update_market_serialization
-from .causal_repair import build_causal_repair_plan, store_causal_repair_plan
+from .causal_repair import (
+    assess_causal_closure,
+    build_causal_repair_plan,
+    finalize_causal_repair_cycle,
+    record_causal_repair_attempt,
+    start_causal_repair_cycle,
+    store_causal_repair_plan,
+)
 from .portfolio_memory import portfolio_prompt_payload, update_portfolio_memory
 from analytics.content_ceiling import evaluate_episode
 
@@ -270,32 +277,57 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     # revision passes, enforce viral
     viral_required = bool(cfg["quality"].get("viral_required", True))
     max_passes = int(cfg["limits"].get("max_revision_passes", 2))
+    repair_budget = int(cfg["limits"].get("causal_repair_retry_budget", max_passes) or max_passes)
     cur_obj = draft_obj
-    for _ in range(max_passes):
-        rewrite_repair_plan = build_causal_repair_plan(
-            validate_scene_causality(
-                str(cur_obj.get("episode_text", "")),
-                story_state=state.data.get("story_state_v2", {}),
-                event_plan=event_plan,
-                cliffhanger_plan=cliffhanger_plan,
-            ),
-            story_state=state.data.get("story_state_v2", {}),
-            event_plan=event_plan,
-            cliffhanger_plan=cliffhanger_plan,
-        )
+    initial_causal_report = validate_scene_causality(
+        str(cur_obj.get("episode_text", "")),
+        story_state=state.data.get("story_state_v2", {}),
+        event_plan=event_plan,
+        cliffhanger_plan=cliffhanger_plan,
+    )
+    initial_repair_plan = build_causal_repair_plan(
+        initial_causal_report,
+        story_state=state.data.get("story_state_v2", {}),
+        event_plan=event_plan,
+        cliffhanger_plan=cliffhanger_plan,
+    )
+    start_causal_repair_cycle(state.data, retry_budget=repair_budget, causal_report=initial_causal_report, repair_plan=initial_repair_plan)
+    latest_causal_report = initial_causal_report
+    latest_repair_plan = initial_repair_plan
+    for attempt in range(1, repair_budget + 1):
+        closure = assess_causal_closure(latest_causal_report, latest_repair_plan)
+        viral_ok = True
+        if viral_required:
+            viral_ok, _msg = validate_viral(cur_obj, cliffhanger_plan=cliffhanger_plan)
+        if closure["passed"] and viral_ok:
+            break
         rewrite_prompt = PROMPTS.episode_rewrite_json(
-            cfg, cur_obj, episode, knobs, style, sub_key, viral_required, story_state=story_state, repair_plan=rewrite_repair_plan
+            cfg, cur_obj, episode, knobs, style, sub_key, viral_required, story_state=story_state, repair_plan=latest_repair_plan
         )
         rewrite_resp = llm.call(rewrite_prompt, temperature=0.55)
         cost.add_usage(rewrite_resp)
         ok2, obj2 = parse_json_strict(rewrite_resp.output_text)
         if ok2 and isinstance(obj2, dict):
             cur_obj = obj2
-        # validate viral if required
-        if not viral_required:
-            break
-        valid, _msg = validate_viral(cur_obj, cliffhanger_plan=cliffhanger_plan)
-        if valid:
+        latest_causal_report = validate_scene_causality(
+            str(cur_obj.get("episode_text", "")),
+            story_state=state.data.get("story_state_v2", {}),
+            event_plan=event_plan,
+            cliffhanger_plan=cliffhanger_plan,
+        )
+        latest_repair_plan = build_causal_repair_plan(
+            latest_causal_report,
+            story_state=state.data.get("story_state_v2", {}),
+            event_plan=event_plan,
+            cliffhanger_plan=cliffhanger_plan,
+        )
+        record_causal_repair_attempt(
+            state.data,
+            attempt_index=attempt,
+            causal_report=latest_causal_report,
+            repair_plan=latest_repair_plan,
+        )
+        if attempt >= max_passes and not viral_required and assess_causal_closure(latest_causal_report, latest_repair_plan)["passed"]:
             break
 
     episode_text = str(cur_obj.get("episode_text","")).strip()
@@ -336,6 +368,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         event_plan=event_plan,
         cliffhanger_plan=cliffhanger_plan,
     )
+    finalize_causal_repair_cycle(state.data, causal_report=causal_report, repair_plan=repair_plan)
     store_causal_repair_plan(state.data, repair_plan)
     objective_scores = build_multi_objective_scores(
         score_obj,

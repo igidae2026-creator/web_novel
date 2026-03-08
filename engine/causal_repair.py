@@ -59,12 +59,123 @@ def build_causal_repair_plan(
     }
 
 
+def assess_causal_closure(
+    causal_report: Dict[str, Any],
+    repair_plan: Dict[str, Any] | None = None,
+    threshold: float = 0.72,
+) -> Dict[str, Any]:
+    causal_report = dict(causal_report or {})
+    repair_plan = dict(repair_plan or {})
+    issues = list(causal_report.get("issues", []) or [])
+    critical = list(repair_plan.get("critical_issues", []) or [])
+    unresolved_critical = [issue for issue in issues if issue in critical]
+    raw_score = float(causal_report.get("score", 0.0) or 0.0)
+    closure_score = max(0.0, min(1.0, raw_score - len(unresolved_critical) * 0.08 - max(0, len(issues) - 1) * 0.03))
+    passed = closure_score >= threshold and len(unresolved_critical) == 0
+    return {
+        "passed": passed,
+        "closure_score": closure_score,
+        "unresolved_issues": issues,
+        "unresolved_critical": unresolved_critical,
+    }
+
+
+def start_causal_repair_cycle(
+    state: Dict[str, Any],
+    retry_budget: int,
+    causal_report: Dict[str, Any],
+    repair_plan: Dict[str, Any],
+) -> Dict[str, Any]:
+    story_state = ensure_story_state(state)
+    control = story_state["control"]["causal_repair"]
+    status = assess_causal_closure(causal_report, repair_plan)
+    control.update(
+        {
+            "critical_issues": list(repair_plan.get("critical_issues", []) or []),
+            "directives": list(repair_plan.get("directives", []) or []),
+            "repair_confidence": int(repair_plan.get("repair_confidence", 5) or 5),
+            "retry_budget": int(retry_budget),
+            "attempts_used": 0,
+            "status": "pending" if not status["passed"] else "passed_without_retry",
+            "closure_score": float(status["closure_score"]),
+            "history": [],
+        }
+    )
+    state["story_state_v2"] = story_state
+    sync_story_state(state)
+    return control
+
+
+def record_causal_repair_attempt(
+    state: Dict[str, Any],
+    attempt_index: int,
+    causal_report: Dict[str, Any],
+    repair_plan: Dict[str, Any],
+) -> Dict[str, Any]:
+    story_state = ensure_story_state(state)
+    control = story_state["control"]["causal_repair"]
+    status = assess_causal_closure(causal_report, repair_plan)
+    history = list(control.get("history", []) or [])
+    history.append(
+        {
+            "attempt": int(attempt_index),
+            "issues": list(causal_report.get("issues", []) or []),
+            "closure_score": float(status["closure_score"]),
+            "passed": bool(status["passed"]),
+            "directives": list(repair_plan.get("directives", []) or [])[:3],
+        }
+    )
+    control.update(
+        {
+            "critical_issues": list(repair_plan.get("critical_issues", []) or []),
+            "directives": list(repair_plan.get("directives", []) or []),
+            "repair_confidence": int(repair_plan.get("repair_confidence", 5) or 5),
+            "attempts_used": int(attempt_index),
+            "closure_score": float(status["closure_score"]),
+            "status": "retrying" if not status["passed"] else "closed",
+            "history": history[-6:],
+        }
+    )
+    state["story_state_v2"] = story_state
+    sync_story_state(state)
+    return control
+
+
+def finalize_causal_repair_cycle(
+    state: Dict[str, Any],
+    causal_report: Dict[str, Any],
+    repair_plan: Dict[str, Any],
+) -> Dict[str, Any]:
+    story_state = ensure_story_state(state)
+    control = story_state["control"]["causal_repair"]
+    status = assess_causal_closure(causal_report, repair_plan)
+    attempts_used = int(control.get("attempts_used", 0) or 0)
+    retry_budget = int(control.get("retry_budget", 0) or 0)
+    control.update(
+        {
+            "critical_issues": list(repair_plan.get("critical_issues", []) or []),
+            "directives": list(repair_plan.get("directives", []) or []),
+            "repair_confidence": int(repair_plan.get("repair_confidence", 5) or 5),
+            "closure_score": float(status["closure_score"]),
+            "status": "closed" if status["passed"] else ("failed_after_budget" if attempts_used >= retry_budget else "pending"),
+        }
+    )
+    state["story_state_v2"] = story_state
+    sync_story_state(state)
+    return control
+
+
 def store_causal_repair_plan(state: Dict[str, Any], repair_plan: Dict[str, Any]) -> Dict[str, Any]:
     story_state = ensure_story_state(state)
     story_state["control"]["causal_repair"] = {
         "critical_issues": list(repair_plan.get("critical_issues", []) or []),
         "directives": list(repair_plan.get("directives", []) or []),
         "repair_confidence": int(repair_plan.get("repair_confidence", 5) or 5),
+        "retry_budget": int(story_state["control"]["causal_repair"].get("retry_budget", 0) or 0),
+        "attempts_used": int(story_state["control"]["causal_repair"].get("attempts_used", 0) or 0),
+        "status": str(story_state["control"]["causal_repair"].get("status", "idle")),
+        "closure_score": float(story_state["control"]["causal_repair"].get("closure_score", 0.0) or 0.0),
+        "history": list(story_state["control"]["causal_repair"].get("history", []) or [])[-6:],
     }
     state["story_state_v2"] = story_state
     sync_story_state(state)

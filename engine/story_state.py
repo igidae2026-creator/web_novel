@@ -275,6 +275,11 @@ def _default_story_state(bucket: str | None, outline: str) -> Dict[str, Any]:
                 "critical_issues": [],
                 "directives": [],
                 "repair_confidence": 5,
+                "retry_budget": 0,
+                "attempts_used": 0,
+                "status": "idle",
+                "closure_score": 0.0,
+                "history": [],
             },
         },
     }

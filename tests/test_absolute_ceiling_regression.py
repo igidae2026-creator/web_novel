@@ -9,7 +9,15 @@ from engine.scene_causality import validate_scene_causality
 from engine.antagonist_planner import prepare_antagonist_plan, antagonist_prompt_payload
 from engine.pattern_memory import update_pattern_memory, choose_event_with_memory
 from engine.market_serialization import update_market_serialization, market_prompt_payload
-from engine.causal_repair import build_causal_repair_plan, store_causal_repair_plan, repair_prompt_payload
+from engine.causal_repair import (
+    assess_causal_closure,
+    build_causal_repair_plan,
+    finalize_causal_repair_cycle,
+    record_causal_repair_attempt,
+    repair_prompt_payload,
+    start_causal_repair_cycle,
+    store_causal_repair_plan,
+)
 from engine.portfolio_memory import update_portfolio_memory, portfolio_prompt_payload
 
 
@@ -195,6 +203,42 @@ def test_causal_repair_plan_targets_critical_issues():
     assert "causal_link" in payload["critical_issues"]
     assert payload["repair_confidence"] >= 4
     assert any("인과" in directive or "대가" in directive for directive in payload["directives"])
+
+
+def test_causal_repair_cycle_runs_with_bounded_retries():
+    state = {}
+    ensure_story_state(state)
+    initial_report = {"issues": ["causal_link", "goal_pressure", "world_consequence"], "score": 0.42}
+    initial_plan = build_causal_repair_plan(
+        initial_report,
+        story_state=state["story_state_v2"],
+        event_plan={"type": "collapse"},
+        cliffhanger_plan={"mode": "collapse_edge", "open_question": "무엇이 먼저 무너질까"},
+    )
+    start_causal_repair_cycle(state, retry_budget=2, causal_report=initial_report, repair_plan=initial_plan)
+    retry_report = {"issues": ["world_consequence"], "score": 0.73}
+    retry_plan = build_causal_repair_plan(
+        retry_report,
+        story_state=state["story_state_v2"],
+        event_plan={"type": "collapse"},
+        cliffhanger_plan={"mode": "collapse_edge", "open_question": "무엇이 먼저 무너질까"},
+    )
+    record_causal_repair_attempt(state, attempt_index=1, causal_report=retry_report, repair_plan=retry_plan)
+    final_report = {"issues": [], "score": 0.9}
+    final_plan = build_causal_repair_plan(
+        final_report,
+        story_state=state["story_state_v2"],
+        event_plan={"type": "collapse"},
+        cliffhanger_plan={"mode": "collapse_edge", "open_question": "무엇이 먼저 무너질까"},
+    )
+    control = finalize_causal_repair_cycle(state, causal_report=final_report, repair_plan=final_plan)
+    closure = assess_causal_closure(final_report, final_plan)
+
+    assert control["retry_budget"] == 2
+    assert control["attempts_used"] == 1
+    assert control["status"] == "closed"
+    assert closure["passed"]
+    assert control["closure_score"] >= 0.85
 
 
 def test_portfolio_memory_tracks_crowded_and_winning_patterns():
