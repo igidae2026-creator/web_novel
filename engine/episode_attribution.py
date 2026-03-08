@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from .causal_attribution import build_scene_event_attribution
 from .story_state import ensure_story_state, sync_story_state
 
 
@@ -11,6 +12,9 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
 
 def build_episode_attribution(
     episode: int,
+    episode_text: str,
+    event_plan: Dict[str, Any] | None,
+    cliffhanger_plan: Dict[str, Any] | None,
     score_obj: Dict[str, Any],
     retention_state: Dict[str, Any],
     story_state: Dict[str, Any],
@@ -30,10 +34,11 @@ def build_episode_attribution(
     expectation_alignment = float(rewards.get("expectation_alignment", 5) or 5) / 10.0
     payoff_integrity = float(promise_graph.get("payoff_integrity", 0.5) or 0.5)
     unresolved_promises = min(1.0, float(promise_graph.get("unresolved_count", 0) or 0) / 6.0)
+    fine_grained = build_scene_event_attribution(episode_text, event_plan=event_plan, cliffhanger_plan=cliffhanger_plan)
     retention_signal = _clamp(hook_score * 0.32 + unresolved_pressure * 0.22 + payoff_score * 0.16 + payoff_integrity * 0.12 + ceiling_total * 0.10 + reward_density * 0.08)
-    pacing_signal = _clamp(pacing_score * 0.56 + (1.0 - repetition) * 0.18 + expectation_alignment * 0.14 + max(0.0, 1.0 - abs(unresolved_pressure - 0.6)) * 0.12)
+    pacing_signal = _clamp(pacing_score * 0.56 + (1.0 - repetition) * 0.18 + expectation_alignment * 0.14 + max(0.0, 1.0 - abs(unresolved_pressure - 0.6)) * 0.12 + float(fine_grained.get("scene_signal", 0.0) or 0.0) * 0.04)
     fatigue_signal = _clamp(repetition * 0.48 + payoff_debt * 0.18 + unresolved_promises * 0.12 + max(0.0, reward_density - 0.75) * 0.22)
-    payoff_signal = _clamp(payoff_score * 0.46 + payoff_integrity * 0.34 + expectation_alignment * 0.12 + max(0.0, 1.0 - unresolved_promises) * 0.08)
+    payoff_signal = _clamp(payoff_score * 0.46 + payoff_integrity * 0.34 + expectation_alignment * 0.12 + max(0.0, 1.0 - unresolved_promises) * 0.08 + float(fine_grained.get("scene_signal", 0.0) or 0.0) * 0.03)
     return {
         "episode": int(episode),
         "retention_signal": round(retention_signal, 4),
@@ -41,12 +46,16 @@ def build_episode_attribution(
         "fatigue_signal": round(fatigue_signal, 4),
         "payoff_signal": round(payoff_signal, 4),
         "ceiling_signal": round(ceiling_total, 4),
+        "fine_grained": fine_grained,
     }
 
 
 def record_episode_attribution(
     state: Dict[str, Any],
     episode: int,
+    episode_text: str,
+    event_plan: Dict[str, Any] | None,
+    cliffhanger_plan: Dict[str, Any] | None,
     score_obj: Dict[str, Any],
     retention_state: Dict[str, Any],
     content_ceiling: Dict[str, Any] | None = None,
@@ -54,6 +63,9 @@ def record_episode_attribution(
     story_state = ensure_story_state(state)
     attribution = build_episode_attribution(
         episode=episode,
+        episode_text=episode_text,
+        event_plan=event_plan,
+        cliffhanger_plan=cliffhanger_plan,
         score_obj=score_obj,
         retention_state=retention_state,
         story_state=story_state,

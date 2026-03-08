@@ -135,3 +135,4 @@ The system does not locally maximize cliff intensity, reward density, or novelty
 - promise/payoff state is now tracked as a cross-episode graph with unresolved debt, payoff integrity, and corruption detection feeding evaluation
 - episode-level attribution now records retention, pacing, fatigue, and payoff signals per episode for downstream repair and release decisions
 - release planning now reserves multiple future windows so strong tracks can claim high-value slots without monopolizing long-horizon opportunity
+- promise state now carries character-specific ownership and dependency edges, causal attribution now identifies high-impact scene units, and long-horizon allocation now accounts for platform seasonality across six windows

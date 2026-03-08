@@ -228,6 +228,8 @@ def _default_story_state(bucket: str | None, outline: str) -> Dict[str, Any]:
         "promise_graph": {
             "active_promises": [],
             "resolved_promises": [],
+            "character_promises": {},
+            "dependency_edges": [],
             "payoff_corruption_flags": [],
             "unresolved_count": 0,
             "resolution_rate": 0.0,

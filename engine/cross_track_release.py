@@ -24,6 +24,13 @@ DEFAULT_OUTCOME_MEMORY = {
     "window_wins": 0.0,
 }
 
+SEASONAL_PLATFORM_BIAS = {
+    "Munpia": [0.08, 0.04, 0.0, -0.03, -0.05, 0.02],
+    "KakaoPage": [0.04, 0.08, 0.02, -0.02, -0.04, 0.01],
+    "NaverSeries": [0.03, 0.05, 0.01, -0.01, -0.02, 0.0],
+    "DEFAULT": [0.02, 0.03, 0.0, -0.01, -0.02, 0.0],
+}
+
 
 def _load_json(path: str) -> Dict[str, Any]:
     try:
@@ -76,7 +83,7 @@ def _track_runtime_outcome_memory(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 def _track_episode_attribution_memory(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     attributions = [row.get("episode_attribution") for row in rows if isinstance(row, dict) and isinstance(row.get("episode_attribution"), dict)]
     if not attributions:
-        return {"observed": 0, "retention_signal": 0.0, "pacing_signal": 0.0, "fatigue_signal": 0.0, "payoff_signal": 0.0}
+        return {"observed": 0, "retention_signal": 0.0, "pacing_signal": 0.0, "fatigue_signal": 0.0, "payoff_signal": 0.0, "scene_signal": 0.0}
     observed = len(attributions)
     return {
         "observed": observed,
@@ -84,6 +91,7 @@ def _track_episode_attribution_memory(rows: List[Dict[str, Any]]) -> Dict[str, A
         "pacing_signal": round(sum(float(item.get("pacing_signal", 0.0) or 0.0) for item in attributions) / observed, 4),
         "fatigue_signal": round(sum(float(item.get("fatigue_signal", 0.0) or 0.0) for item in attributions) / observed, 4),
         "payoff_signal": round(sum(float(item.get("payoff_signal", 0.0) or 0.0) for item in attributions) / observed, 4),
+        "scene_signal": round(sum(float(((item.get("fine_grained", {}) or {}).get("scene_signal", 0.0) or 0.0)) for item in attributions) / observed, 4),
     }
 
 
@@ -113,7 +121,12 @@ def build_runtime_release_learning_snapshot(tracks_root: str, last_n: int = 8) -
     return {"track_outcomes": by_track, "platform_outcomes": by_platform}
 
 
-def _build_multi_window_reservations(tracks: List[Dict[str, Any]], windows: int = 3) -> Dict[str, Any]:
+def _seasonality_bias(platform: str, window: int) -> float:
+    table = SEASONAL_PLATFORM_BIAS.get(platform, SEASONAL_PLATFORM_BIAS["DEFAULT"])
+    return float(table[min(len(table) - 1, max(0, window))])
+
+
+def _build_multi_window_reservations(tracks: List[Dict[str, Any]], windows: int = 6) -> Dict[str, Any]:
     per_platform_window_counts: Dict[str, Dict[int, int]] = {}
     per_track_reserved: Dict[str, int] = {}
     reservations: List[Dict[str, Any]] = []
@@ -131,7 +144,8 @@ def _build_multi_window_reservations(tracks: List[Dict[str, Any]], windows: int 
             monopoly_penalty = monopoly_risk * (0.16 if window == 0 else 0.08)
             payoff_bonus = episode_payoff * (0.08 if window == 0 else 0.05)
             coordination_bonus = coordination * (0.06 if window <= 1 else 0.04)
-            window_score = adaptive_score + payoff_bonus + coordination_bonus - occupancy_penalty - monopoly_penalty - window * 0.03
+            seasonality_bonus = _seasonality_bias(platform, window)
+            window_score = adaptive_score + payoff_bonus + coordination_bonus + seasonality_bonus - occupancy_penalty - monopoly_penalty - window * 0.03
             if window_score > best_score:
                 best_score = window_score
                 best_window = window
@@ -143,7 +157,7 @@ def _build_multi_window_reservations(tracks: List[Dict[str, Any]], windows: int 
                 "platform": platform,
                 "window": best_window,
                 "reservation_score": round(best_score, 4),
-                "reason": "high_value_window" if best_window == 0 else "staggered_balance" if best_window == 1 else "cooldown_balance",
+                "reason": "high_value_window" if best_window == 0 else "seasonal_peak" if best_window <= 2 else "cooldown_balance",
             }
         )
     long_horizon_pressure = {

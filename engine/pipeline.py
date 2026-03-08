@@ -413,6 +413,9 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     episode_attribution = record_episode_attribution(
         state.data,
         episode=episode,
+        episode_text=episode_text,
+        event_plan=event_plan,
+        cliffhanger_plan=cliffhanger_plan,
         score_obj=score_obj,
         retention_state=state.data.get("retention_engine", {}),
         content_ceiling=content_ceiling,
