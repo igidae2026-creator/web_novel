@@ -14,10 +14,12 @@ from engine.causal_repair import (
     build_causal_repair_plan,
     finalize_causal_repair_cycle,
     record_causal_repair_attempt,
+    record_repair_diff_audit,
     repair_prompt_payload,
     start_causal_repair_cycle,
     store_causal_repair_plan,
 )
+from engine.repair_diff_audit import audit_repair_diff
 from engine.portfolio_memory import learn_portfolio_snapshot, update_portfolio_memory, portfolio_prompt_payload
 from engine.portfolio_signals import compute_portfolio_signals
 from engine.regression_guard import portfolio_signal_decision
@@ -272,6 +274,48 @@ def test_causal_repair_specializes_strategy_after_failed_attempt():
     assert second_plan["strategy_key"] != "baseline"
     assert second_plan["strategy_coverage"] > 0.0
     assert state["story_state_v2"]["control"]["causal_repair"]["next_strategy_shift"]
+
+
+def test_repair_diff_audit_detects_unresolved_target_and_updates_effectiveness():
+    state = {}
+    ensure_story_state(state)
+    initial_report = {"issues": ["causal_link", "world_consequence"], "score": 0.32}
+    repair_plan = build_causal_repair_plan(
+        initial_report,
+        story_state=state["story_state_v2"],
+        event_plan={"type": "collapse"},
+        cliffhanger_plan={"mode": "collapse_edge", "open_question": "무엇이 먼저 무너질까"},
+    )
+    start_causal_repair_cycle(state, retry_budget=2, causal_report=initial_report, repair_plan=repair_plan)
+    retry_report = {"issues": ["world_consequence"], "score": 0.69}
+    record_causal_repair_attempt(state, attempt_index=1, causal_report=retry_report, repair_plan=repair_plan)
+    audit = record_repair_diff_audit(
+        state,
+        attempt_index=1,
+        pre_text="황자는 걸었다. 세계는 그대로였다.",
+        post_text="황자는 결단했다. 그러나 세계의 규칙은 여전히 변하지 않았다.",
+        pre_report=initial_report,
+        post_report=retry_report,
+        repair_plan=repair_plan,
+    )
+
+    assert audit["mismatch_type"] == "unresolved_target"
+    assert audit["resolved_targets"] == ["causal_link"]
+    assert state["story_state_v2"]["control"]["causal_repair"]["defect_resolution_score"] > 0.0
+    assert state["story_state_v2"]["control"]["causal_repair"]["strategy_effectiveness"]
+
+
+def test_repair_diff_audit_marks_resolved_when_targeted_defects_clear():
+    audit = audit_repair_diff(
+        pre_text="황자는 망설였다. 이유는 없다.",
+        post_text="황자는 조력자를 지키기 위해 망설였고, 그 대가로 규칙이 흔들렸다.",
+        pre_report={"issues": ["causal_link", "world_consequence"], "score": 0.35},
+        post_report={"issues": [], "score": 0.88},
+        repair_plan={"critical_issues": ["causal_link", "world_consequence"]},
+    )
+
+    assert audit["mismatch_type"] == "resolved"
+    assert audit["defect_resolution_score"] >= 0.7
 
 
 def test_portfolio_memory_tracks_crowded_and_winning_patterns():

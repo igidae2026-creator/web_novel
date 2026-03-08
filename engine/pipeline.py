@@ -35,6 +35,7 @@ from .causal_repair import (
     build_causal_repair_plan,
     finalize_causal_repair_cycle,
     record_causal_repair_attempt,
+    record_repair_diff_audit,
     start_causal_repair_cycle,
     store_causal_repair_plan,
 )
@@ -301,6 +302,8 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
             viral_ok, _msg = validate_viral(cur_obj, cliffhanger_plan=cliffhanger_plan)
         if closure["passed"] and viral_ok:
             break
+        pre_rewrite_text = str(cur_obj.get("episode_text", ""))
+        pre_rewrite_report = dict(latest_causal_report or {})
         rewrite_prompt = PROMPTS.episode_rewrite_json(
             cfg, cur_obj, episode, knobs, style, sub_key, viral_required, story_state=story_state, repair_plan=latest_repair_plan
         )
@@ -325,6 +328,15 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
             state.data,
             attempt_index=attempt,
             causal_report=latest_causal_report,
+            repair_plan=latest_repair_plan,
+        )
+        record_repair_diff_audit(
+            state.data,
+            attempt_index=attempt,
+            pre_text=pre_rewrite_text,
+            post_text=str(cur_obj.get("episode_text", "")),
+            pre_report=pre_rewrite_report,
+            post_report=latest_causal_report,
             repair_plan=latest_repair_plan,
         )
         if attempt >= max_passes and not viral_required and assess_causal_closure(latest_causal_report, latest_repair_plan)["passed"]:

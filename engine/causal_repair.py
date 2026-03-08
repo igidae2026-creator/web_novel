@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from .repair_diff_audit import audit_repair_diff
 from .story_state import ensure_story_state, sync_story_state
 
 
@@ -38,9 +39,11 @@ def _priority(issue: str) -> int:
 
 def _repair_strategy_bundle(
     issues: list[str],
+    strategy_effectiveness: Dict[str, Any] | None = None,
     previous_history: list[dict[str, Any]] | None = None,
 ) -> Dict[str, Any]:
     previous_history = list(previous_history or [])
+    strategy_effectiveness = dict(strategy_effectiveness or {})
     strategy_counts: Dict[str, int] = {}
     for item in previous_history:
         key = str(item.get("strategy_key", "")).strip()
@@ -59,7 +62,9 @@ def _repair_strategy_bundle(
         if key not in unique:
             unique.append(key)
     dominant = unique[0] if unique else "baseline"
-    if dominant in strategy_counts and len(unique) >= 2:
+    if float(strategy_effectiveness.get(dominant, 0.5) or 0.5) < 0.5 and len(unique) >= 2:
+        dominant = unique[1]
+    elif dominant in strategy_counts and len(unique) >= 2:
         dominant = unique[1]
     coverage = max(0.0, min(1.0, len(unique) / 3.0 + min(0.2, len(issues) * 0.03)))
     return {
@@ -81,11 +86,13 @@ def build_causal_repair_plan(
     story_state = dict(story_state or {})
     event_plan = dict(event_plan or {})
     cliffhanger_plan = dict(cliffhanger_plan or {})
-    previous_history = list((story_state.get("control", {}) or {}).get("causal_repair", {}).get("history", []) or [])
+    repair_state = (story_state.get("control", {}) or {}).get("causal_repair", {}) or {}
+    previous_history = list(repair_state.get("history", []) or [])
+    strategy_effectiveness = dict(repair_state.get("strategy_effectiveness", {}) or {})
 
     issues = list(causal_report.get("issues", []) or [])
     critical = sorted([issue for issue in issues if _priority(issue) >= 2], key=_priority, reverse=True)
-    strategy = _repair_strategy_bundle(issues, previous_history=previous_history)
+    strategy = _repair_strategy_bundle(issues, strategy_effectiveness=strategy_effectiveness, previous_history=previous_history)
     directives = [ISSUE_DIRECTIVES[issue] for issue in sorted(issues, key=_priority, reverse=True) if issue in ISSUE_DIRECTIVES][:3]
     directives.extend(strategy["strategy_shift"])
     repair_confidence = max(
@@ -156,6 +163,17 @@ def start_causal_repair_cycle(
             "strategy_coverage": float(repair_plan.get("strategy_coverage", 0.0) or 0.0),
             "failed_strategies": list(repair_plan.get("failed_strategies", []) or [])[:3],
             "next_strategy_shift": str(repair_plan.get("next_strategy_shift", "") or ""),
+            "defect_resolution_score": 0.0,
+            "strategy_effectiveness": dict(control.get("strategy_effectiveness", {}) or {}),
+            "diff_audit": {
+                "mismatch_type": "pending",
+                "resolved_targets": [],
+                "persistent_targets": list(repair_plan.get("critical_issues", []) or []),
+                "new_issues": [],
+                "lexical_shift": 0.0,
+                "score_delta": 0.0,
+                "defect_resolution_score": 0.0,
+            },
             "history": [],
         }
     )
@@ -204,6 +222,38 @@ def record_causal_repair_attempt(
     return control
 
 
+def record_repair_diff_audit(
+    state: Dict[str, Any],
+    attempt_index: int,
+    pre_text: str,
+    post_text: str,
+    pre_report: Dict[str, Any],
+    post_report: Dict[str, Any],
+    repair_plan: Dict[str, Any],
+) -> Dict[str, Any]:
+    story_state = ensure_story_state(state)
+    control = story_state["control"]["causal_repair"]
+    audit = audit_repair_diff(pre_text, post_text, pre_report, post_report, repair_plan=repair_plan)
+    strategy_key = str(repair_plan.get("strategy_key", control.get("strategy_key", "baseline")) or "baseline")
+    effectiveness = dict(control.get("strategy_effectiveness", {}) or {})
+    prior = float(effectiveness.get(strategy_key, 0.5) or 0.5)
+    effectiveness[strategy_key] = round((prior * 0.6) + (float(audit["strategy_effectiveness"]) * 0.4), 4)
+    history = list(control.get("history", []) or [])
+    if history and int(history[-1].get("attempt", -1)) == int(attempt_index):
+        history[-1]["diff_audit"] = audit
+    control.update(
+        {
+            "defect_resolution_score": float(audit["defect_resolution_score"]),
+            "strategy_effectiveness": effectiveness,
+            "diff_audit": audit,
+            "history": history[-6:],
+        }
+    )
+    state["story_state_v2"] = story_state
+    sync_story_state(state)
+    return audit
+
+
 def finalize_causal_repair_cycle(
     state: Dict[str, Any],
     causal_report: Dict[str, Any],
@@ -232,6 +282,7 @@ def finalize_causal_repair_cycle(
             "strategy_coverage": next_strategy_coverage,
             "failed_strategies": list(repair_plan.get("failed_strategies", control.get("failed_strategies", [])) or [])[:3],
             "next_strategy_shift": str(repair_plan.get("next_strategy_shift", control.get("next_strategy_shift", "")) or ""),
+            "defect_resolution_score": max(float(control.get("defect_resolution_score", 0.0) or 0.0), float(status["closure_score"])),
         }
     )
     state["story_state_v2"] = story_state
@@ -254,6 +305,9 @@ def store_causal_repair_plan(state: Dict[str, Any], repair_plan: Dict[str, Any])
         "strategy_coverage": max(float(prev.get("strategy_coverage", 0.0) or 0.0), float(repair_plan.get("strategy_coverage", 0.0) or 0.0)),
         "failed_strategies": list(repair_plan.get("failed_strategies", prev.get("failed_strategies", [])) or [])[:3],
         "next_strategy_shift": str(repair_plan.get("next_strategy_shift", prev.get("next_strategy_shift", "")) or ""),
+        "defect_resolution_score": float(prev.get("defect_resolution_score", 0.0) or 0.0),
+        "strategy_effectiveness": dict(prev.get("strategy_effectiveness", {}) or {}),
+        "diff_audit": dict(prev.get("diff_audit", {}) or {}),
         "history": list(prev.get("history", []) or [])[-6:],
     }
     state["story_state_v2"] = story_state
