@@ -49,3 +49,9 @@ and should not create circular imports with `llm/` or `core/`.
 - added `engine/tension_wave.py` to target spike / pressure / release bands instead of flat intensity
 - applied tension-wave control to generation knobs before drafting and exposed the wave state to prompts
 - added tests for spike targeting and post-episode peak tracking
+
+## 2026-03-09 Fun Engine Step 6
+
+- upgraded `engine/predictive_retention.py` from score-only prediction to unresolved-thread pressure modeling
+- added retention state to story prompts and metrics logging
+- added tests for unresolved pressure modeling and pressure-sensitive retention prediction

@@ -75,6 +75,9 @@ class PROMPTS:
 텐션 파형:
 {(story_state or {}).get('tension', {})}
 
+리텐션 압력:
+{(story_state or {}).get('retention', {})}
+
 외부 랭킹 관측치:
 {ext_snapshot}
 

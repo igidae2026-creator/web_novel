@@ -19,6 +19,7 @@ from .quality_gate import quality_gate
 from .event_generator import generate_event_plan, event_prompt_payload, register_story_event
 from .cliffhanger_engine import generate_cliffhanger_plan, enforce_cliffhanger
 from .tension_wave import prepare_tension_wave, apply_tension_wave, update_tension_wave, tension_prompt_payload
+from .predictive_retention import build_retention_state, predict_retention, retention_prompt_payload
 
 def _internal_knobs(cfg: dict, episode: int) -> dict:
     nv = cfg["novel"]
@@ -207,12 +208,14 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         conflict_prompt_payload(state.data),
         event_plan,
     )
+    build_retention_state(state.data, event_plan=event_plan, cliffhanger_plan=cliffhanger_plan)
     story_state = {
         "character": character_prompt_payload(state.data),
         "conflict": conflict_prompt_payload(state.data),
         "event": event_prompt_payload(event_plan),
         "cliffhanger": cliffhanger_plan,
         "tension": tension_prompt_payload(state.data),
+        "retention": retention_prompt_payload(state.data),
     }
 
     snap = ext.latest(pj["platform"], pj["genre_bucket"]) or {}
@@ -282,6 +285,8 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     ok3, score_obj = parse_json_strict(sc_resp.output_text)
     if not (ok3 and isinstance(score_obj, dict)):
         score_obj = {"raw": str(score_obj)}
+    predicted_retention = predict_retention(score_obj, fat, state.data.get("retention_engine"))
+    state.set("predicted_retention", predicted_retention)
 
     # update score history
     hist = state.get("score_history", [])
@@ -312,6 +317,10 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "scores": score_obj,
         "style_vector": state.get("style_vector"),
         "fatigue": fat_pack,
+        "retention": {
+            "predicted_next_episode": predicted_retention,
+            "pressure_state": state.data.get("retention_engine", {}),
+        },
         "cost": cost.snapshot(),
     }
     if cfg["output"].get("save_metrics_jsonl", True):
