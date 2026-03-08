@@ -1,0 +1,15 @@
+version: v1_structural
+promote:
+  A: 3.0
+  B: 5.0
+  C: 10.0
+demote:
+  A: 3.5
+  B: 6.0
+  C: 12.0
+cooldown_days: 7
+grade_to_phase:
+  A: { phase: BOOST, intensity: 1.0 }
+  B: { phase: BOOST, intensity: 0.6 }
+  C: { phase: STABILIZE, intensity: 0.0 }
+  D: { phase: STABILIZE, intensity: 0.0 }

@@ -1,0 +1,13 @@
+version: v1_structural
+events_jsonl:
+  fields: [ts, type, payload]
+metrics_jsonl:
+  common_fields: [ts, episode, platform, genre_bucket, type(optional)]
+  certification_record:
+    type: certification
+    report: object
+  grade_record:
+    type: grade
+    grade: string
+    date: YYYY-MM-DD
+    top_percent: number

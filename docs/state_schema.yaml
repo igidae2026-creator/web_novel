@@ -1,0 +1,16 @@
+version: v1_structural
+required_fields:
+  - next_episode
+  - phase
+  - phase_cooldown
+  - grade
+  - grade_cooldown_days
+optional_fields:
+  - pending_phase
+  - rebuild_level
+  - rebuild_cooldown
+  - decline_streak
+  - boost_streak
+  - top_percent_hist
+notes:
+  - State is per-track (track_dir/state.json)

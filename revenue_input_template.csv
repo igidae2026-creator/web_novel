@@ -1,0 +1,4 @@
+date,platform,exposures,clicks,purchases,repurchases,revenue,paying_users,genre_bucket,retention_d7
+2026-03-02,Munpia,50000,1200,80,25,320000,80,A,0.18
+
+2026-03-02,Joara,30000,700,40,10,180000,40,A,0.15

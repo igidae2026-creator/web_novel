@@ -1,0 +1,10 @@
+version: v1_structural
+bands:
+  top3: 3.0
+  top5: 5.0
+  top10: 10.0
+  top20: 20.0
+certification:
+  max_std_top_percent: 1.2
+  window_days: 7
+out_of_chart_policy: HOLD_LAST   # NA | HOLD_LAST | SET_101

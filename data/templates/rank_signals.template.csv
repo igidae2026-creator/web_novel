@@ -1,0 +1,5 @@
+date,platform,chart_size,rank,event_flag,notes,genre_bucket
+2026-03-02,Munpia,100,7,false,"TOP100 전체랭킹 관측",A
+2026-03-02,KakaoPage,100,12,true,"이벤트",C
+
+2026-03-02,Joara,100,15,false,"TOP100 장르랭킹 관측",A

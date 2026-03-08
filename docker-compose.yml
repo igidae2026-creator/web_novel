@@ -1,0 +1,10 @@
+services:
+  metaos:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./outputs:/app/outputs
+      - ./data:/app/data

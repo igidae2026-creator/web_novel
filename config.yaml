@@ -1,0 +1,89 @@
+project:
+  name: "METAOS_Project"
+  platform: "Munpia"              # Joara | Munpia | NaverSeries | KakaoPage | Ridibooks | Novelpia
+  genre_bucket: "A"               # A..I
+  sub_engine: "AUTO"              # AUTO or one of the bucket-specific keys (see UI)
+  target_top_percent_band: [1, 3] # chart-relative (% within chart)
+
+model:
+  name: "gpt-5.2"
+  mode: "batch"                   # batch | priority
+  prices_per_1m:
+    input: 0.875
+    output: 7.0
+    cached_input: 0.0875
+
+limits:
+  token_ceiling_total: 2500000
+  max_retries: 4
+  sleep_seconds_between_calls: 0.12
+  max_revision_passes: 2
+
+novel:
+  total_episodes: 300
+  words_per_episode_min: 2500
+  words_per_episode_max: 3500
+  early_focus_episodes: 3
+  paywall_window: [20, 30]
+  arc_reset_every: 50
+  fatigue_window: 12
+  fatigue_threshold: 0.62
+
+quality:
+  hook_score_min: 0.70
+  paywall_score_min: 0.70
+  emotion_density_min: 0.65
+  repetition_max: 0.35
+  escalation_min: 0.65
+  viral_required: true
+
+external:
+  rank_signals_csv: "data/rank_signals.csv"
+  enable_external_adjustment: true
+  external_weight: 0.65
+  slope_window: 5
+
+output:
+  root_dir: "outputs"
+  save_outline: true
+  save_metrics_jsonl: true
+  save_state: true
+
+realistic_cap_top_percent: 3.0
+
+market:
+  out_of_chart_policy: "HOLD_LAST"  # NA | HOLD_LAST | SET_101
+  window_days: 7
+
+safe_mode: true
+
+rebuild:
+  hook_threshold: 0.60
+  decline_streak: 3
+  cooldown: 5
+
+engine:
+  random_seed: 42
+
+certification:
+  market_target: "TOP3"   # TOP3|TOP5|TOP10
+  max_std_top_percent: 1.2
+  window_days: 7
+  score_window_eps: 10
+
+portfolio:
+  max_boost_per_platform: 1
+  boost_priority: top_percent  # top_percent | grade
+
+phase: "STABILIZE"  # STABILIZE | BOOST
+
+model_version: "v1_structural"
+
+model_files:
+  market: "config/models/market_model.yaml"
+  grading: "config/models/grading_model.yaml"
+  portfolio: "config/models/portfolio_model.yaml"
+  competition: "config/models/competition_model.yaml"
+
+model_files:
+  market_policy: "config/models/market_policy.yaml"
