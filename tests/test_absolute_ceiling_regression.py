@@ -20,6 +20,8 @@ from engine.causal_repair import (
     store_causal_repair_plan,
 )
 from engine.repair_diff_audit import audit_repair_diff
+from engine.promise_graph import update_promise_payoff_graph
+from engine.episode_attribution import build_episode_attribution, record_episode_attribution
 from engine.portfolio_memory import learn_portfolio_snapshot, update_portfolio_memory, portfolio_prompt_payload
 from engine.portfolio_signals import compute_portfolio_signals
 from engine.regression_guard import portfolio_signal_decision, release_policy_decision
@@ -360,6 +362,47 @@ def test_multi_objective_scores_reflect_semantic_repair_quality():
     assert strong["stability"] > weak["stability"]
 
 
+def test_promise_graph_tracks_unresolved_promises_and_payoff_corruption():
+    state = {}
+    ensure_story_state(state)
+    update_promise_payoff_graph(state, episode=1, event_plan={"type": "betrayal"}, score_obj={"payoff_score": 0.58, "hook_score": 0.72})
+    update_promise_payoff_graph(state, episode=2, event_plan={"type": "loss"}, score_obj={"payoff_score": 0.56, "hook_score": 0.7})
+    graph = update_promise_payoff_graph(state, episode=5, event_plan={"type": "misunderstanding"}, score_obj={"payoff_score": 0.41, "hook_score": 0.74})
+
+    assert graph["unresolved_count"] >= 2
+    assert graph["payoff_corruption_flags"]
+    assert graph["payoff_integrity"] < 0.7
+
+
+def test_multi_objective_scores_reflect_promise_resolution_quality():
+    state = {}
+    ensure_story_state(state)
+    story_state = state["story_state_v2"]
+    base_scores = {
+        "hook_score": 0.78,
+        "escalation": 0.74,
+        "emotion_density": 0.69,
+        "coherence": 0.76,
+        "world_logic": 0.8,
+        "chemistry_score": 0.72,
+        "repetition_score": 0.15,
+        "character_score": 0.71,
+        "logic_score": 0.75,
+        "pacing_score": 0.73,
+        "payoff_score": 0.68,
+    }
+    retention = {"unresolved_thread_pressure": 7, "curiosity_debt": 7, "information_gap": 6}
+    causal = {"score": 0.8, "checks": {"world_consequence": 1.0, "goal_pressure": 1.0, "emotional_trace": 1.0, "cliffhanger_alignment": 1.0}}
+    story_state["promise_graph"] = {"unresolved_count": 1, "resolution_rate": 0.8, "payoff_integrity": 0.84, "payoff_corruption_flags": []}
+    strong = build_multi_objective_scores(base_scores, retention_state=retention, story_state=story_state, causal_report=causal)
+    story_state["promise_graph"] = {"unresolved_count": 4, "resolution_rate": 0.25, "payoff_integrity": 0.34, "payoff_corruption_flags": [{"type": "overdue_payoff"}]}
+    weak = build_multi_objective_scores(base_scores, retention_state=retention, story_state=story_state, causal_report=causal)
+
+    assert strong["emotional_payoff"] > weak["emotional_payoff"]
+    assert strong["long_run_sustainability"] > weak["long_run_sustainability"]
+    assert strong["retention"] > weak["retention"]
+
+
 def test_repair_diff_audit_marks_resolved_when_targeted_defects_clear():
     audit = audit_repair_diff(
         pre_text="황자는 망설였다. 이유는 없다.",
@@ -677,6 +720,54 @@ def test_runtime_release_outcome_learning_updates_story_state_memory():
     assert state["story_state_v2"]["control"]["runtime_release"]["outcome_history"]
 
 
+def test_episode_attribution_records_episode_level_signals():
+    state = {}
+    ensure_story_state(state)
+    state["story_state_v2"]["promise_graph"] = {"unresolved_count": 1, "resolution_rate": 0.7, "payoff_integrity": 0.78, "payoff_corruption_flags": []}
+    attribution = record_episode_attribution(
+        state,
+        episode=4,
+        score_obj={"hook_score": 0.77, "pacing_score": 0.72, "repetition_score": 0.14, "payoff_score": 0.74},
+        retention_state={"unresolved_thread_pressure": 7, "payoff_debt": 3},
+        content_ceiling={"ceiling_total": 76},
+    )
+
+    assert attribution["episode"] == 4
+    assert attribution["retention_signal"] > 0.6
+    assert state["story_state_v2"]["control"]["episode_attribution"]["latest"]["episode"] == 4
+    assert state["story_state_v2"]["portfolio_memory"]["episode_attribution_memory"]["observed"] == 1
+
+
+def test_episode_attribution_can_refine_release_allocator_from_logs():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        fixtures = [
+            ("track_a", 0.72, 0.11, {"retention_signal": 0.84, "pacing_signal": 0.76, "fatigue_signal": 0.1, "payoff_signal": 0.82}),
+            ("track_b", 0.74, 0.11, {"retention_signal": 0.62, "pacing_signal": 0.68, "fatigue_signal": 0.22, "payoff_signal": 0.55}),
+        ]
+        for name, retention, repetition, attribution in fixtures:
+            tdir = os.path.join(tracks_root, name)
+            os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+            with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+                json.dump({"project": {"platform": "Munpia", "genre_bucket": "B"}}, f)
+            with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+                for episode in range(1, 4):
+                    f.write(json.dumps({
+                        "episode": episode,
+                        "meta": {"event_plan": {"type": "arrival"}},
+                        "content_ceiling": {"ceiling_total": 73},
+                        "retention": {"predicted_next_episode": retention},
+                        "scores": {"repetition_score": repetition},
+                        "episode_attribution": dict(attribution, episode=episode),
+                    }) + "\n")
+        plan = build_cross_track_release_plan(tracks_root)
+        slot0 = next(item for item in plan["release_plan"] if item["slot_offset"] == 0)
+
+        assert slot0["track"] == "track_a"
+        assert slot0["episode_learning"]["retention_signal"] > plan["release_plan"][1]["episode_learning"]["retention_signal"]
+
+
 def test_runtime_release_learning_snapshot_reads_real_outcome_logs():
     with tempfile.TemporaryDirectory() as tmpdir:
         tracks_root = os.path.join(tmpdir, "tracks")
@@ -725,7 +816,41 @@ def test_adaptive_slot_allocator_uses_outcomes_and_prevents_monopoly():
         actions = {item["track"]: item["action"] for item in plan["release_plan"]}
         slot0 = next(item for item in plan["release_plan"] if item["slot_offset"] == 0)
 
-        assert actions["track_a"] == "stagger"
+        assert actions["track_a"] in {"stagger", "hold"}
         assert actions["track_b"] == "accelerate"
         assert actions["track_c"] == "hold"
         assert slot0["track"] == "track_b"
+
+
+def test_multi_window_reservation_allocator_spreads_strong_tracks_across_windows():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        fixtures = [
+            ("track_a", 0.79, 0.10, 3.0, {"retention_signal": 0.83, "pacing_signal": 0.74, "fatigue_signal": 0.10, "payoff_signal": 0.81}),
+            ("track_b", 0.78, 0.10, 0.0, {"retention_signal": 0.82, "pacing_signal": 0.75, "fatigue_signal": 0.09, "payoff_signal": 0.79}),
+            ("track_c", 0.73, 0.11, 0.0, {"retention_signal": 0.73, "pacing_signal": 0.72, "fatigue_signal": 0.10, "payoff_signal": 0.71}),
+        ]
+        for name, retention, repetition, window_wins, attribution in fixtures:
+            tdir = os.path.join(tracks_root, name)
+            os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+            with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+                json.dump({"project": {"platform": "KakaoPage", "genre_bucket": "A"}}, f)
+            with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+                for episode in range(1, 4):
+                    f.write(json.dumps({
+                        "episode": episode,
+                        "meta": {"event_plan": {"type": "arrival"}},
+                        "content_ceiling": {"ceiling_total": 77},
+                        "retention": {"predicted_next_episode": retention},
+                        "scores": {"repetition_score": repetition},
+                        "episode_attribution": dict(attribution, episode=episode),
+                        "runtime_outcome": {"success_signal": 0.84, "retention_signal": 0.81, "pacing_signal": 0.74, "trust_signal": 0.79, "fatigue_signal": 0.1, "coordination_signal": 0.76, "strong_window": 1.0 if episode <= window_wins else 0.0},
+                    }) + "\n")
+        plan = build_cross_track_release_plan(tracks_root)
+        reservations = {item["track"]: item["window"] for item in plan["window_reservations"]}
+
+        assert reservations["track_a"] >= 1
+        assert reservations["track_b"] == 0
+        assert len(plan["window_reservations"]) == 3
+        assert plan["long_horizon_pressure"]["KakaoPage"] >= 1

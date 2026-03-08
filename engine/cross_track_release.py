@@ -73,6 +73,20 @@ def _track_runtime_outcome_memory(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _track_episode_attribution_memory(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    attributions = [row.get("episode_attribution") for row in rows if isinstance(row, dict) and isinstance(row.get("episode_attribution"), dict)]
+    if not attributions:
+        return {"observed": 0, "retention_signal": 0.0, "pacing_signal": 0.0, "fatigue_signal": 0.0, "payoff_signal": 0.0}
+    observed = len(attributions)
+    return {
+        "observed": observed,
+        "retention_signal": round(sum(float(item.get("retention_signal", 0.0) or 0.0) for item in attributions) / observed, 4),
+        "pacing_signal": round(sum(float(item.get("pacing_signal", 0.0) or 0.0) for item in attributions) / observed, 4),
+        "fatigue_signal": round(sum(float(item.get("fatigue_signal", 0.0) or 0.0) for item in attributions) / observed, 4),
+        "payoff_signal": round(sum(float(item.get("payoff_signal", 0.0) or 0.0) for item in attributions) / observed, 4),
+    }
+
+
 def build_runtime_release_learning_snapshot(tracks_root: str, last_n: int = 8) -> Dict[str, Any]:
     by_track: Dict[str, Dict[str, Any]] = {}
     by_platform: Dict[str, Dict[str, float]] = {}
@@ -99,6 +113,50 @@ def build_runtime_release_learning_snapshot(tracks_root: str, last_n: int = 8) -
     return {"track_outcomes": by_track, "platform_outcomes": by_platform}
 
 
+def _build_multi_window_reservations(tracks: List[Dict[str, Any]], windows: int = 3) -> Dict[str, Any]:
+    per_platform_window_counts: Dict[str, Dict[int, int]] = {}
+    per_track_reserved: Dict[str, int] = {}
+    reservations: List[Dict[str, Any]] = []
+    for track in tracks:
+        platform = str(track.get("platform", "UNKNOWN") or "UNKNOWN")
+        adaptive_score = float(track.get("adaptive_score", 0.0) or 0.0)
+        monopoly_risk = float((track.get("runtime_learning", {}) or {}).get("window_wins", 0.0) or 0.0)
+        episode_payoff = float((track.get("episode_learning", {}) or {}).get("payoff_signal", 0.0) or 0.0)
+        coordination = float((track.get("runtime_learning", {}) or {}).get("coordination", 0.0) or 0.0)
+        pressure = per_platform_window_counts.setdefault(platform, {})
+        best_window = 0
+        best_score = -999.0
+        for window in range(max(1, int(windows))):
+            occupancy_penalty = float(pressure.get(window, 0) or 0) * 0.18
+            monopoly_penalty = monopoly_risk * (0.16 if window == 0 else 0.08)
+            payoff_bonus = episode_payoff * (0.08 if window == 0 else 0.05)
+            coordination_bonus = coordination * (0.06 if window <= 1 else 0.04)
+            window_score = adaptive_score + payoff_bonus + coordination_bonus - occupancy_penalty - monopoly_penalty - window * 0.03
+            if window_score > best_score:
+                best_score = window_score
+                best_window = window
+        pressure[best_window] = pressure.get(best_window, 0) + 1
+        per_track_reserved[str(track.get("track"))] = best_window
+        reservations.append(
+            {
+                "track": str(track.get("track")),
+                "platform": platform,
+                "window": best_window,
+                "reservation_score": round(best_score, 4),
+                "reason": "high_value_window" if best_window == 0 else "staggered_balance" if best_window == 1 else "cooldown_balance",
+            }
+        )
+    long_horizon_pressure = {
+        platform: max(counts.values()) if counts else 0
+        for platform, counts in per_platform_window_counts.items()
+    }
+    return {
+        "reservations": reservations,
+        "reservation_map": per_track_reserved,
+        "long_horizon_pressure": long_horizon_pressure,
+    }
+
+
 def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[str, Any]:
     runtime_learning = build_runtime_release_learning_snapshot(tracks_root, last_n=last_n)
     tracks: List[Dict[str, Any]] = []
@@ -109,6 +167,7 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
         rows = _load_jsonl(os.path.join(track_dir, "outputs", "metrics.jsonl"))[-last_n:]
         track_learning = dict(runtime_learning.get("track_outcomes", {}).get(os.path.basename(track_dir), DEFAULT_OUTCOME_MEMORY) or DEFAULT_OUTCOME_MEMORY)
         platform_learning = dict(runtime_learning.get("platform_outcomes", {}).get(str(platform), {}) or {})
+        episode_learning = _track_episode_attribution_memory(rows)
         if rows:
             mean_retention = sum(float((row.get("retention", {}) or {}).get("predicted_next_episode", 0.0) or 0.0) for row in rows) / len(rows)
             mean_repetition = sum(float((row.get("scores", {}) or {}).get("repetition_score", 0.0) or 0.0) for row in rows) / len(rows)
@@ -121,9 +180,12 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
             + float(track_learning.get("trust", 0.0) or 0.0) * 0.10
             + float(track_learning.get("coordination", 0.0) or 0.0) * 0.08
             + float(track_learning.get("retention_lift", 0.0) or 0.0) * 0.08
+            + float(episode_learning.get("retention_signal", 0.0) or 0.0) * 0.08
+            + float(episode_learning.get("payoff_signal", 0.0) or 0.0) * 0.07
             + float(platform_learning.get("success", 0.0) or 0.0) * 0.05
             - mean_repetition * 0.24
             - float(track_learning.get("fatigue", 0.0) or 0.0) * 0.12
+            - float(episode_learning.get("fatigue_signal", 0.0) or 0.0) * 0.12
             - min(0.35, float(track_learning.get("window_wins", 0.0) or 0.0) * 0.08)
         )
         tracks.append(
@@ -136,9 +198,12 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
                 "policy": policy,
                 "adaptive_score": round(adaptive_score, 4),
                 "runtime_learning": track_learning,
+                "episode_learning": episode_learning,
             }
         )
     tracks.sort(key=lambda item: (item["platform"], -item["adaptive_score"], -item["mean_retention"], item["fatigue"], item["track"]))
+    reservation_state = _build_multi_window_reservations(tracks)
+    reservation_map = dict(reservation_state.get("reservation_map", {}) or {})
     per_platform_slot: Dict[str, int] = {}
     release_plan: List[Dict[str, Any]] = []
     interference = 0
@@ -154,9 +219,15 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
         learned_success = float((track.get("runtime_learning", {}) or {}).get("success", 0.0) or 0.0)
         learned_trust = float((track.get("runtime_learning", {}) or {}).get("trust", 0.0) or 0.0)
         monopoly_risk = float((track.get("runtime_learning", {}) or {}).get("window_wins", 0.0) or 0.0)
-        if track["fatigue"] + learned_fatigue * 0.25 >= float(policy.get("fatigue_limit", 0.20) or 0.20):
+        episode_fatigue = float((track.get("episode_learning", {}) or {}).get("fatigue_signal", 0.0) or 0.0)
+        reserved_window = int(reservation_map.get(str(track.get("track")), 0) or 0)
+        if track["fatigue"] + learned_fatigue * 0.25 + episode_fatigue * 0.15 >= float(policy.get("fatigue_limit", 0.20) or 0.20):
             action = "hold"
-        elif slot < int(policy.get("primary_slot_cap", 1) or 1) and track["mean_retention"] + learned_success * 0.08 >= float(policy.get("accelerate_retention", 0.72) or 0.72) and monopoly_risk < 2.2:
+        elif reserved_window >= 2:
+            action = "hold"
+        elif reserved_window == 1:
+            action = "stagger"
+        elif slot < int(policy.get("primary_slot_cap", 1) or 1) and track["mean_retention"] + learned_success * 0.08 + float((track.get("episode_learning", {}) or {}).get("retention_signal", 0.0) or 0.0) * 0.05 >= float(policy.get("accelerate_retention", 0.72) or 0.72) and monopoly_risk < 2.2:
             action = "accelerate"
         elif slot == 0 and learned_trust >= 0.72 and learned_success >= 0.68:
             action = "accelerate"
@@ -176,6 +247,8 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
                 "slot_pressure": platform_slot_pressure[platform],
                 "adaptive_score": track["adaptive_score"],
                 "runtime_learning": dict(track.get("runtime_learning", {}) or {}),
+                "episode_learning": dict(track.get("episode_learning", {}) or {}),
+                "reserved_window": reserved_window,
             }
         )
         if platform_slot_pressure[platform] >= 1:
@@ -197,6 +270,8 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
         "platform_slot_pressure": platform_slot_pressure,
         "policy_directives": policy_directives[:4],
         "runtime_learning": runtime_learning,
+        "window_reservations": reservation_state.get("reservations", []),
+        "long_horizon_pressure": reservation_state.get("long_horizon_pressure", {}),
     }
 
 

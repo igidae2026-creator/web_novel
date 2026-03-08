@@ -156,6 +156,7 @@ def update_portfolio_memory(
         memory["release_guard"] = _clamp(memory["release_guard"] + int(stable_tracks >= 2))
     runtime_learning = dict(story_state["portfolio_memory"].get("runtime_release_learning", {}) or {})
     runtime_outcomes = dict(story_state["portfolio_memory"].get("runtime_outcome_memory", {}) or {})
+    episode_attribution_memory = dict(story_state["portfolio_memory"].get("episode_attribution_memory", {}) or {})
     observed_runtime = sum(int((item or {}).get("observed", 0) or 0) for item in list(runtime_release_snapshot.get("track_outcomes", {}).values()))
     if observed_runtime:
         mean_success = sum(float((item or {}).get("success", 0.0) or 0.0) for item in list(runtime_release_snapshot.get("track_outcomes", {}).values())) / max(1, len(runtime_release_snapshot.get("track_outcomes", {})))
@@ -181,15 +182,19 @@ def update_portfolio_memory(
         memory["coordination_health"] = _clamp(memory["coordination_health"] + int(mean_coordination >= 0.72))
     memory["runtime_release_learning"] = runtime_learning
     memory["runtime_outcome_memory"] = runtime_outcomes
+    memory["episode_attribution_memory"] = episode_attribution_memory
     release_plan = list(release_snapshot.get("release_plan", []) or [])
     interference_pressure = int(release_snapshot.get("interference_pressure", 0) or 0)
     hold_tracks = sum(1 for item in release_plan if item.get("action") == "hold")
     accelerate_tracks = sum(1 for item in release_plan if item.get("action") == "accelerate")
     memory["release_strategy"] = "staggered" if interference_pressure >= 4 else "focused" if accelerate_tracks >= 1 else "balanced"
     memory["release_plan"] = release_plan[:6]
+    memory["window_reservations"] = list(release_snapshot.get("window_reservations", []) or [])[:8]
+    long_horizon_pressure = dict(release_snapshot.get("long_horizon_pressure", {}) or {})
+    memory["long_horizon_pressure"] = max(long_horizon_pressure.values()) if long_horizon_pressure else 0
     slot_pressure = dict(release_snapshot.get("platform_slot_pressure", {}) or {})
     memory["platform_slot_pressure"] = max(slot_pressure.values()) if slot_pressure else 0
-    memory["release_guard"] = _clamp(memory["release_guard"] + int(accelerate_tracks >= 1) - int(hold_tracks >= 2))
+    memory["release_guard"] = _clamp(memory["release_guard"] + int(accelerate_tracks >= 1) - int(hold_tracks >= 2) - int(memory["long_horizon_pressure"] >= 3))
     memory["shared_risk_alert"] = _clamp(memory["shared_risk_alert"] + int(interference_pressure >= 6))
     directives: List[str] = []
     if crowding >= 6 or novelty_debt >= 6:
@@ -235,10 +240,13 @@ def portfolio_prompt_payload(state: Dict[str, Any]) -> Dict[str, Any]:
         "release_guard": memory.get("release_guard", 0),
         "release_strategy": memory.get("release_strategy", "balanced"),
         "release_plan": memory.get("release_plan", [])[:4],
+        "window_reservations": memory.get("window_reservations", [])[:6],
+        "long_horizon_pressure": memory.get("long_horizon_pressure", 0),
         "platform_slot_pressure": memory.get("platform_slot_pressure", 0),
         "slot_policy_directives": memory.get("slot_policy_directives", [])[:4],
         "policy_directives": memory.get("policy_directives", [])[:4],
         "runtime_release_learning": memory.get("runtime_release_learning", {}),
         "runtime_outcome_memory": memory.get("runtime_outcome_memory", {}),
+        "episode_attribution_memory": memory.get("episode_attribution_memory", {}),
         "portfolio_metrics": story_state.get("portfolio_metrics", {}),
     }

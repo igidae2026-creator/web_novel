@@ -23,6 +23,8 @@ from .predictive_retention import build_retention_state, predict_retention, rete
 from .information_emotion import prepare_information_emotion, information_prompt_payload
 from .world_logic import update_world_state, world_prompt_payload
 from .reward_serialization import update_reward_serialization
+from .promise_graph import update_promise_payoff_graph
+from .episode_attribution import record_episode_attribution
 from .story_state import ensure_story_state
 from .multi_objective import build_multi_objective_scores, multi_objective_balance
 from .regression_guard import regression_decision
@@ -408,7 +410,15 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "scene_causality": causal_report,
     }
     content_ceiling = evaluate_episode(episode_text, ceiling_meta)
+    episode_attribution = record_episode_attribution(
+        state.data,
+        episode=episode,
+        score_obj=score_obj,
+        retention_state=state.data.get("retention_engine", {}),
+        content_ceiling=content_ceiling,
+    )
     meta["content_ceiling"] = content_ceiling
+    meta["episode_attribution"] = episode_attribution
     meta["multi_objective"] = {
         "axes": objective_scores,
         "balance": objective_balance,
@@ -450,6 +460,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
             "pressure_state": state.data.get("retention_engine", {}),
         },
         "content_ceiling": content_ceiling,
+        "episode_attribution": episode_attribution,
         "cost": cost.snapshot(),
     }
     if cfg["output"].get("save_metrics_jsonl", True):
@@ -462,6 +473,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     update_tension_wave(state.data, episode, score_obj=score_obj, event_plan=event_plan)
     update_world_state(state.data, episode, event_plan=event_plan)
     update_reward_serialization(state.data, episode, event_plan=event_plan)
+    update_promise_payoff_graph(state.data, episode, event_plan=event_plan, score_obj=score_obj)
     prepare_information_emotion(state.data, episode=episode, event_plan=event_plan)
     update_pattern_memory(state.data, episode=episode, event_plan=event_plan, cliffhanger_plan=cliffhanger_plan)
     update_market_serialization(state.data, episode=episode, cfg=cfg, event_plan=event_plan)

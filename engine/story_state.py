@@ -225,6 +225,15 @@ def _default_story_state(bucket: str | None, outline: str) -> Dict[str, Any]:
             "market_fit": 5,
             "exploration_budget": 4,
         },
+        "promise_graph": {
+            "active_promises": [],
+            "resolved_promises": [],
+            "payoff_corruption_flags": [],
+            "unresolved_count": 0,
+            "resolution_rate": 0.0,
+            "payoff_integrity": 0.0,
+            "episode_history": [],
+        },
         "market": {
             "platform_pacing": "balanced",
             "paywall_pressure": 4,
@@ -270,6 +279,8 @@ def _default_story_state(bucket: str | None, outline: str) -> Dict[str, Any]:
             "release_guard": 5,
             "release_strategy": "balanced",
             "release_plan": [],
+            "window_reservations": [],
+            "long_horizon_pressure": 0,
             "platform_slot_pressure": 0,
             "slot_policy_directives": [],
             "policy_directives": [],
@@ -290,6 +301,13 @@ def _default_story_state(bucket: str | None, outline: str) -> Dict[str, Any]:
                 "fatigue_signal": 0.0,
                 "coordination_signal": 0.0,
                 "observed": 0,
+            },
+            "episode_attribution_memory": {
+                "observed": 0,
+                "retention_signal": 0.0,
+                "pacing_signal": 0.0,
+                "fatigue_signal": 0.0,
+                "payoff_signal": 0.0,
             },
         },
         "portfolio_metrics": {
@@ -318,6 +336,10 @@ def _default_story_state(bucket: str | None, outline: str) -> Dict[str, Any]:
                 "accelerate_budget": 0,
                 "history": [],
                 "outcome_history": [],
+            },
+            "episode_attribution": {
+                "latest": {},
+                "history": [],
             },
             "causal_repair": {
                 "critical_issues": [],

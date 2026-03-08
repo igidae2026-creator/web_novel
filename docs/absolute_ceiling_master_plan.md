@@ -132,3 +132,6 @@ The system does not locally maximize cliff intensity, reward density, or novelty
 - release scheduling is now enforced at runtime through queue-level accelerate/stagger/hold behavior instead of remaining a planning-only layer
 - runtime release outcomes now feed story-state learning for retention, pacing, trust, fatigue, and coordination so later release policy is shaped by executed results
 - platform-aware slot policy now uses adaptive outcome-weighted allocation with strong-window anti-monopoly guards instead of fixed retention ordering alone
+- promise/payoff state is now tracked as a cross-episode graph with unresolved debt, payoff integrity, and corruption detection feeding evaluation
+- episode-level attribution now records retention, pacing, fatigue, and payoff signals per episode for downstream repair and release decisions
+- release planning now reserves multiple future windows so strong tracks can claim high-value slots without monopolizing long-horizon opportunity

@@ -87,6 +87,8 @@ def build_causal_repair_plan(
     event_plan = dict(event_plan or {})
     cliffhanger_plan = dict(cliffhanger_plan or {})
     repair_state = (story_state.get("control", {}) or {}).get("causal_repair", {}) or {}
+    promise_graph = (story_state.get("promise_graph", {}) or {})
+    episode_attribution = ((story_state.get("control", {}) or {}).get("episode_attribution", {}) or {}).get("latest", {}) or {}
     previous_history = list(repair_state.get("history", []) or [])
     strategy_effectiveness = dict(repair_state.get("strategy_effectiveness", {}) or {})
 
@@ -94,6 +96,12 @@ def build_causal_repair_plan(
     critical = sorted([issue for issue in issues if _priority(issue) >= 2], key=_priority, reverse=True)
     strategy = _repair_strategy_bundle(issues, strategy_effectiveness=strategy_effectiveness, previous_history=previous_history)
     directives = [ISSUE_DIRECTIVES[issue] for issue in sorted(issues, key=_priority, reverse=True) if issue in ISSUE_DIRECTIVES][:3]
+    if int(promise_graph.get("unresolved_count", 0) or 0) >= 2:
+        directives.append("미회수 약속 하나를 현재 장면에서 부분 또는 전체 payoff로 회수하라.")
+    if float(episode_attribution.get("payoff_signal", 0.0) or 0.0) < 0.52:
+        directives.append("직전 회차 payoff 신호가 약했으므로 이번 수정에서 감정/관계 보상을 명시하라.")
+    if float(episode_attribution.get("retention_signal", 0.0) or 0.0) < 0.56:
+        directives.append("직전 회차 retention 귀속이 약했으므로 장면 말미 압박과 질문을 선명하게 복구하라.")
     directives.extend(strategy["strategy_shift"])
     repair_confidence = max(
         1,
