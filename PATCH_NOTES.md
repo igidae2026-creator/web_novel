@@ -31,3 +31,9 @@ and should not create circular imports with `llm/` or `core/`.
 - replaced integer-only conflict memory with a consequence-driven thread engine in `engine/conflict_memory.py`
 - added conflict state injection to prompts so scenes are generated from open threads and escalation mode
 - added tests for open-thread pressure and fallout thread creation after losses
+
+## 2026-03-09 Fun Engine Step 3
+
+- added a typed event generator in `engine/event_generator.py` for `reveal`, `betrayal`, `reversal`, `loss`, and `arrival`
+- wired event plans into prompt state, episode metadata, and post-episode state updates
+- added tests for typed event payload generation and event history registration

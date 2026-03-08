@@ -66,6 +66,9 @@ class PROMPTS:
 갈등 상태:
 {(story_state or {}).get('conflict', {})}
 
+이벤트 계획:
+{(story_state or {}).get('event', {})}
+
 외부 랭킹 관측치:
 {ext_snapshot}
 

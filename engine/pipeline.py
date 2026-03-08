@@ -16,6 +16,7 @@ from .market_policy_engine import apply_market_policy
 from .damping_controller import damp_knobs
 from .intensity_lock import clamp_knobs, apply_freeze, register_change
 from .quality_gate import quality_gate
+from .event_generator import generate_event_plan, event_prompt_payload, register_story_event
 
 def _internal_knobs(cfg: dict, episode: int) -> dict:
     nv = cfg["novel"]
@@ -196,9 +197,11 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
 
     prepare_character_arc(state.data, cfg=cfg, outline=outline, episode=episode)
     prepare_conflict_memory(state.data, episode=episode)
+    event_plan = generate_event_plan(state.data, episode=episode)
     story_state = {
         "character": character_prompt_payload(state.data),
         "conflict": conflict_prompt_payload(state.data),
+        "event": event_prompt_payload(event_plan),
     }
 
     snap = ext.latest(pj["platform"], pj["genre_bucket"]) or {}
@@ -249,6 +252,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "quote_line": str(cur_obj.get("quote_line","")).strip(),
         "comment_hook": str(cur_obj.get("comment_hook","")).strip(),
         "cliffhanger": str(cur_obj.get("cliffhanger","")).strip(),
+        "event_plan": event_plan,
     }
 
     # style update
@@ -299,8 +303,9 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         append_jsonl(os.path.join(out_dir, "metrics.jsonl"), record, safe_mode=cfg.get("safe_mode", False), project_dir_for_backup=out_dir)
 
     # update state
-    update_character_arc(state.data, episode, score_obj=score_obj)
-    update_conflict_memory(state.data, episode, score_obj=score_obj)
+    register_story_event(state.data, event_plan)
+    update_character_arc(state.data, episode, score_obj=score_obj, event_plan=event_plan)
+    update_conflict_memory(state.data, episode, score_obj=score_obj, event_plan=event_plan)
     thresholds = cfg.get('quality',{})
     if not quality_gate(score_obj, thresholds):
         knobs['hook_intensity'] = min(0.99, knobs.get('hook_intensity',0.7)+0.1)
