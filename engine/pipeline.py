@@ -17,6 +17,7 @@ from .damping_controller import damp_knobs
 from .intensity_lock import clamp_knobs, apply_freeze, register_change
 from .quality_gate import quality_gate
 from .event_generator import generate_event_plan, event_prompt_payload, register_story_event
+from .cliffhanger_engine import generate_cliffhanger_plan, enforce_cliffhanger
 
 def _internal_knobs(cfg: dict, episode: int) -> dict:
     nv = cfg["novel"]
@@ -198,10 +199,16 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     prepare_character_arc(state.data, cfg=cfg, outline=outline, episode=episode)
     prepare_conflict_memory(state.data, episode=episode)
     event_plan = generate_event_plan(state.data, episode=episode)
+    cliffhanger_plan = generate_cliffhanger_plan(
+        character_prompt_payload(state.data),
+        conflict_prompt_payload(state.data),
+        event_plan,
+    )
     story_state = {
         "character": character_prompt_payload(state.data),
         "conflict": conflict_prompt_payload(state.data),
         "event": event_prompt_payload(event_plan),
+        "cliffhanger": cliffhanger_plan,
     }
 
     snap = ext.latest(pj["platform"], pj["genre_bucket"]) or {}
@@ -243,17 +250,21 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         # validate viral if required
         if not viral_required:
             break
-        valid, _msg = validate_viral(cur_obj)
+        valid, _msg = validate_viral(cur_obj, cliffhanger_plan=cliffhanger_plan)
         if valid:
             break
 
     episode_text = str(cur_obj.get("episode_text","")).strip()
-    meta = {
+    meta = enforce_cliffhanger(
+        {
         "quote_line": str(cur_obj.get("quote_line","")).strip(),
         "comment_hook": str(cur_obj.get("comment_hook","")).strip(),
         "cliffhanger": str(cur_obj.get("cliffhanger","")).strip(),
         "event_plan": event_plan,
-    }
+        "cliffhanger_plan": cliffhanger_plan,
+        },
+        cliffhanger_plan,
+    )
 
     # style update
     new_style = compute_style_vector(episode_text)

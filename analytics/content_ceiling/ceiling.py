@@ -21,7 +21,7 @@ def evaluate_episode(text: str, meta: Dict[str, Any] | None = None) -> Dict[str,
     events = extract_events(text)
     curve = compute_curve(text)
     rhythm = compute_rhythm(text)
-    cliff = classify(text)
+    cliff = classify(text, meta)
     axes = compute_axes(text)
 
     reward_mean = _safe_mean(events.reward_intervals)

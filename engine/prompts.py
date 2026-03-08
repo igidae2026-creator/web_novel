@@ -69,6 +69,9 @@ class PROMPTS:
 이벤트 계획:
 {(story_state or {}).get('event', {})}
 
+클리프행어 계획:
+{(story_state or {}).get('cliffhanger', {})}
+
 외부 랭킹 관측치:
 {ext_snapshot}
 

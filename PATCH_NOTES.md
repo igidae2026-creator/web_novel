@@ -37,3 +37,9 @@ and should not create circular imports with `llm/` or `core/`.
 - added a typed event generator in `engine/event_generator.py` for `reveal`, `betrayal`, `reversal`, `loss`, and `arrival`
 - wired event plans into prompt state, episode metadata, and post-episode state updates
 - added tests for typed event payload generation and event history registration
+
+## 2026-03-09 Fun Engine Step 4
+
+- added a structural cliffhanger generator and validator in `engine/cliffhanger_engine.py`
+- replaced cliffhanger length-only validation with withheld-consequence validation
+- upgraded content ceiling cliffhanger analysis to read structural cliffhanger and event metadata
