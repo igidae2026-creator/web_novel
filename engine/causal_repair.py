@@ -16,6 +16,17 @@ ISSUE_DIRECTIVES = {
     "emotional_trace": "감정 흔적이 신체 반응 또는 감각으로 남게 하라.",
 }
 
+ISSUE_STRATEGIES = {
+    "event_presence": {"strategy": "event_anchor", "shift": "핵심 사건을 장면 전면으로 이동시켜 존재를 분명히 한다."},
+    "causal_link": {"strategy": "causal_chain", "shift": "선택 -> 결과 -> 후속 압박의 3단 인과 사슬을 명시한다."},
+    "goal_pressure": {"strategy": "desire_alignment", "shift": "주인공의 욕망과 현재 행동을 직접 연결한다."},
+    "cost_payment": {"strategy": "cost_materialization", "shift": "손실과 대가를 감정/관계/세계 비용으로 구체화한다."},
+    "relationship_fallout": {"strategy": "relationship_aftershock", "shift": "관계 후폭풍을 대사와 행동 반응으로 확장한다."},
+    "world_consequence": {"strategy": "world_rule_feedback", "shift": "세계 규칙과 세력 지형 변화를 결과에 묶는다."},
+    "cliffhanger_alignment": {"strategy": "pressure_exit", "shift": "마지막 질문이 현재 압박의 직접 연장선이 되게 재구성한다."},
+    "emotional_trace": {"strategy": "embodied_emotion", "shift": "감정을 감각, 몸 반응, 후회 흔적으로 남긴다."},
+}
+
 
 def _priority(issue: str) -> int:
     if issue in {"causal_link", "goal_pressure", "cost_payment"}:
@@ -23,6 +34,41 @@ def _priority(issue: str) -> int:
     if issue in {"event_presence", "world_consequence", "relationship_fallout"}:
         return 2
     return 1
+
+
+def _repair_strategy_bundle(
+    issues: list[str],
+    previous_history: list[dict[str, Any]] | None = None,
+) -> Dict[str, Any]:
+    previous_history = list(previous_history or [])
+    strategy_counts: Dict[str, int] = {}
+    for item in previous_history:
+        key = str(item.get("strategy_key", "")).strip()
+        if key:
+            strategy_counts[key] = strategy_counts.get(key, 0) + 1
+    strategies = []
+    shifts = []
+    for issue in issues:
+        bundle = ISSUE_STRATEGIES.get(issue)
+        if not bundle:
+            continue
+        strategies.append(bundle["strategy"])
+        shifts.append(bundle["shift"])
+    unique = []
+    for key in strategies:
+        if key not in unique:
+            unique.append(key)
+    dominant = unique[0] if unique else "baseline"
+    if dominant in strategy_counts and len(unique) >= 2:
+        dominant = unique[1]
+    coverage = max(0.0, min(1.0, len(unique) / 3.0 + min(0.2, len(issues) * 0.03)))
+    return {
+        "strategy_key": dominant,
+        "strategy_mix": unique[:3],
+        "strategy_shift": shifts[:3],
+        "strategy_coverage": coverage,
+        "failed_strategies": sorted(strategy_counts.keys())[-3:],
+    }
 
 
 def build_causal_repair_plan(
@@ -35,10 +81,13 @@ def build_causal_repair_plan(
     story_state = dict(story_state or {})
     event_plan = dict(event_plan or {})
     cliffhanger_plan = dict(cliffhanger_plan or {})
+    previous_history = list((story_state.get("control", {}) or {}).get("causal_repair", {}).get("history", []) or [])
 
     issues = list(causal_report.get("issues", []) or [])
     critical = sorted([issue for issue in issues if _priority(issue) >= 2], key=_priority, reverse=True)
-    directives = [ISSUE_DIRECTIVES[issue] for issue in sorted(issues, key=_priority, reverse=True) if issue in ISSUE_DIRECTIVES][:4]
+    strategy = _repair_strategy_bundle(issues, previous_history=previous_history)
+    directives = [ISSUE_DIRECTIVES[issue] for issue in sorted(issues, key=_priority, reverse=True) if issue in ISSUE_DIRECTIVES][:3]
+    directives.extend(strategy["strategy_shift"])
     repair_confidence = max(
         1,
         min(
@@ -52,10 +101,15 @@ def build_causal_repair_plan(
     )
     return {
         "critical_issues": critical[:3],
-        "directives": directives,
+        "directives": directives[:5],
         "repair_confidence": repair_confidence,
         "target_event": event_plan.get("type"),
         "target_cliffhanger_mode": cliffhanger_plan.get("mode"),
+        "strategy_key": strategy["strategy_key"],
+        "strategy_mix": strategy["strategy_mix"],
+        "strategy_coverage": strategy["strategy_coverage"],
+        "failed_strategies": strategy["failed_strategies"],
+        "next_strategy_shift": strategy["strategy_shift"][0] if strategy["strategy_shift"] else "",
     }
 
 
@@ -98,6 +152,10 @@ def start_causal_repair_cycle(
             "attempts_used": 0,
             "status": "pending" if not status["passed"] else "passed_without_retry",
             "closure_score": float(status["closure_score"]),
+            "strategy_key": str(repair_plan.get("strategy_key", "baseline") or "baseline"),
+            "strategy_coverage": float(repair_plan.get("strategy_coverage", 0.0) or 0.0),
+            "failed_strategies": list(repair_plan.get("failed_strategies", []) or [])[:3],
+            "next_strategy_shift": str(repair_plan.get("next_strategy_shift", "") or ""),
             "history": [],
         }
     )
@@ -123,6 +181,7 @@ def record_causal_repair_attempt(
             "closure_score": float(status["closure_score"]),
             "passed": bool(status["passed"]),
             "directives": list(repair_plan.get("directives", []) or [])[:3],
+            "strategy_key": str(repair_plan.get("strategy_key", "baseline") or "baseline"),
         }
     )
     control.update(
@@ -133,6 +192,10 @@ def record_causal_repair_attempt(
             "attempts_used": int(attempt_index),
             "closure_score": float(status["closure_score"]),
             "status": "retrying" if not status["passed"] else "closed",
+            "strategy_key": str(repair_plan.get("strategy_key", "baseline") or "baseline"),
+            "strategy_coverage": float(repair_plan.get("strategy_coverage", 0.0) or 0.0),
+            "failed_strategies": list(repair_plan.get("failed_strategies", []) or [])[:3],
+            "next_strategy_shift": str(repair_plan.get("next_strategy_shift", "") or ""),
             "history": history[-6:],
         }
     )
@@ -151,6 +214,13 @@ def finalize_causal_repair_cycle(
     status = assess_causal_closure(causal_report, repair_plan)
     attempts_used = int(control.get("attempts_used", 0) or 0)
     retry_budget = int(control.get("retry_budget", 0) or 0)
+    next_strategy_key = str(repair_plan.get("strategy_key", "") or control.get("strategy_key", "baseline") or "baseline")
+    if not repair_plan.get("critical_issues") and control.get("strategy_key"):
+        next_strategy_key = str(control.get("strategy_key"))
+    next_strategy_coverage = max(
+        float(control.get("strategy_coverage", 0.0) or 0.0),
+        float(repair_plan.get("strategy_coverage", 0.0) or 0.0),
+    )
     control.update(
         {
             "critical_issues": list(repair_plan.get("critical_issues", []) or []),
@@ -158,6 +228,10 @@ def finalize_causal_repair_cycle(
             "repair_confidence": int(repair_plan.get("repair_confidence", 5) or 5),
             "closure_score": float(status["closure_score"]),
             "status": "closed" if status["passed"] else ("failed_after_budget" if attempts_used >= retry_budget else "pending"),
+            "strategy_key": next_strategy_key,
+            "strategy_coverage": next_strategy_coverage,
+            "failed_strategies": list(repair_plan.get("failed_strategies", control.get("failed_strategies", [])) or [])[:3],
+            "next_strategy_shift": str(repair_plan.get("next_strategy_shift", control.get("next_strategy_shift", "")) or ""),
         }
     )
     state["story_state_v2"] = story_state
@@ -167,15 +241,20 @@ def finalize_causal_repair_cycle(
 
 def store_causal_repair_plan(state: Dict[str, Any], repair_plan: Dict[str, Any]) -> Dict[str, Any]:
     story_state = ensure_story_state(state)
+    prev = story_state["control"]["causal_repair"]
     story_state["control"]["causal_repair"] = {
         "critical_issues": list(repair_plan.get("critical_issues", []) or []),
         "directives": list(repair_plan.get("directives", []) or []),
         "repair_confidence": int(repair_plan.get("repair_confidence", 5) or 5),
-        "retry_budget": int(story_state["control"]["causal_repair"].get("retry_budget", 0) or 0),
-        "attempts_used": int(story_state["control"]["causal_repair"].get("attempts_used", 0) or 0),
-        "status": str(story_state["control"]["causal_repair"].get("status", "idle")),
-        "closure_score": float(story_state["control"]["causal_repair"].get("closure_score", 0.0) or 0.0),
-        "history": list(story_state["control"]["causal_repair"].get("history", []) or [])[-6:],
+        "retry_budget": int(prev.get("retry_budget", 0) or 0),
+        "attempts_used": int(prev.get("attempts_used", 0) or 0),
+        "status": str(prev.get("status", "idle")),
+        "closure_score": float(prev.get("closure_score", 0.0) or 0.0),
+        "strategy_key": str(repair_plan.get("strategy_key", prev.get("strategy_key", "baseline")) or "baseline"),
+        "strategy_coverage": max(float(prev.get("strategy_coverage", 0.0) or 0.0), float(repair_plan.get("strategy_coverage", 0.0) or 0.0)),
+        "failed_strategies": list(repair_plan.get("failed_strategies", prev.get("failed_strategies", [])) or [])[:3],
+        "next_strategy_shift": str(repair_plan.get("next_strategy_shift", prev.get("next_strategy_shift", "")) or ""),
+        "history": list(prev.get("history", []) or [])[-6:],
     }
     state["story_state_v2"] = story_state
     sync_story_state(state)

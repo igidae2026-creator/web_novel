@@ -244,6 +244,32 @@ def test_causal_repair_cycle_runs_with_bounded_retries():
     assert control["status"] == "closed"
     assert closure["passed"]
     assert control["closure_score"] >= 0.85
+    assert control["strategy_key"] in {"baseline", "causal_chain", "desire_alignment", "world_rule_feedback"}
+    assert control["strategy_coverage"] >= 0.0
+
+
+def test_causal_repair_specializes_strategy_after_failed_attempt():
+    state = {}
+    ensure_story_state(state)
+    initial_report = {"issues": ["causal_link", "world_consequence"], "score": 0.38}
+    initial_plan = build_causal_repair_plan(
+        initial_report,
+        story_state=state["story_state_v2"],
+        event_plan={"type": "collapse"},
+        cliffhanger_plan={"mode": "collapse_edge", "open_question": "무엇이 먼저 무너질까"},
+    )
+    start_causal_repair_cycle(state, retry_budget=2, causal_report=initial_report, repair_plan=initial_plan)
+    second_plan = build_causal_repair_plan(
+        initial_report,
+        story_state=state["story_state_v2"],
+        event_plan={"type": "collapse"},
+        cliffhanger_plan={"mode": "collapse_edge", "open_question": "무엇이 먼저 무너질까"},
+    )
+    record_causal_repair_attempt(state, attempt_index=1, causal_report=initial_report, repair_plan=second_plan)
+
+    assert second_plan["strategy_key"] != "baseline"
+    assert second_plan["strategy_coverage"] > 0.0
+    assert state["story_state_v2"]["control"]["causal_repair"]["next_strategy_shift"]
 
 
 def test_portfolio_memory_tracks_crowded_and_winning_patterns():
