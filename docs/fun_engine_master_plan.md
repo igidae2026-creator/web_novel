@@ -114,3 +114,23 @@ The final generator should be able to answer, deterministically and before draft
 - what event type should fire now
 - what kind of cliffhanger should close now
 - what unresolved pressure will force the next click
+
+## Implemented Status
+
+- character desire engine: implemented
+- conflict escalation engine: implemented
+- typed event generator: implemented
+- cliffhanger generator: implemented
+- tension wave controller: implemented
+- retention pressure engine: implemented
+- iterative ceiling search pass 1: implemented
+
+## Ceiling Search Result
+
+The strongest remaining structural gap after pass 1 is not a missing subsystem in runtime state. It is semantic depth:
+
+- richer relationship graph memory
+- scene-level causality validation against actual LLM output
+- antagonist planning distinct from protagonist pressure
+
+These are real upgrades, but they are a larger second-generation architecture rather than a missing first-order subsystem. Within the current repository shape, the highest-value structural gains have been exhausted.

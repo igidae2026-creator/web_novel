@@ -175,3 +175,13 @@ Replace shallow proxies with six explicit subsystems:
 ## Ceiling Thesis
 
 The next meaningful increase in fun potential does not come from tuning the existing knob values. It comes from giving the generator a persistent story machine that tracks desire, fear, weakness, cost, consequence, and unresolved pressure, then forcing every episode to spend or amplify those assets.
+
+## Iterative Ceiling Search Conclusion
+
+Pass 1 targeted the weakest remaining structural loop: the analytics layer. After upgrading it to ingest typed events, cliffhanger pressure, tension state, and retention state, the repository no longer has a comparably large first-order fun bottleneck.
+
+Remaining issues are important, but they are second-generation expansions:
+
+- relationship graph memory across named characters
+- opponent-side planning with explicit counter-strategy
+- scene-level validation of whether drafted text actually realized the planned event and cliffhanger

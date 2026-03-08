@@ -18,11 +18,13 @@ def _safe_std(xs: List[int]) -> float:
 
 def evaluate_episode(text: str, meta: Dict[str, Any] | None = None) -> Dict[str, Any]:
     meta = dict(meta or {})
-    events = extract_events(text)
+    events = extract_events(text, meta)
     curve = compute_curve(text)
     rhythm = compute_rhythm(text)
     cliff = classify(text, meta)
     axes = compute_axes(text)
+    retention = meta.get("retention", {}) or {}
+    tension = meta.get("tension", {}) or {}
 
     reward_mean = _safe_mean(events.reward_intervals)
     status_mean = _safe_mean(events.status_intervals)
@@ -36,6 +38,10 @@ def evaluate_episode(text: str, meta: Dict[str, Any] | None = None) -> Dict[str,
     total += min(15, int(rhythm.std_len))  # rhythm variation
     total += min(10, int(curve.peaks * 4))
     total += min(15, int(events.escalation_steps * 6))
+    total += min(8, int(retention.get("unresolved_thread_pressure", 0) or 0))
+    total += min(8, int(retention.get("curiosity_debt", 0) or 0))
+    total += min(6, int(tension.get("target_tension", 0) or 0))
+    total += min(6, int(events.carryover_pressure))
     total = int(min(100, total))
 
     stats = {
@@ -49,6 +55,8 @@ def evaluate_episode(text: str, meta: Dict[str, Any] | None = None) -> Dict[str,
         "status_rise_interval_mean": status_mean,
         "genre_bucket": meta.get("genre_bucket", "UNKNOWN"),
         "platform": meta.get("platform", "UNKNOWN"),
+        "retention": retention,
+        "tension": tension,
     }
     guide = generate(stats)
     stats["human_guidance"] = asdict(guide)

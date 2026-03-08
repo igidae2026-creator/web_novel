@@ -55,3 +55,9 @@ and should not create circular imports with `llm/` or `core/`.
 - upgraded `engine/predictive_retention.py` from score-only prediction to unresolved-thread pressure modeling
 - added retention state to story prompts and metrics logging
 - added tests for unresolved pressure modeling and pressure-sensitive retention prediction
+
+## 2026-03-09 Iterative Ceiling Search Pass 1
+
+- identified the analysis loop as the next structural bottleneck after the six core engines
+- upgraded content ceiling event extraction to ingest typed events, conflict state, cliffhanger pressure, tension, and retention metadata
+- integrated content ceiling evaluation directly into `engine/pipeline.py` so every episode logs structural fun diagnostics

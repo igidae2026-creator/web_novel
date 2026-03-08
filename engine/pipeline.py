@@ -20,6 +20,7 @@ from .event_generator import generate_event_plan, event_prompt_payload, register
 from .cliffhanger_engine import generate_cliffhanger_plan, enforce_cliffhanger
 from .tension_wave import prepare_tension_wave, apply_tension_wave, update_tension_wave, tension_prompt_payload
 from .predictive_retention import build_retention_state, predict_retention, retention_prompt_payload
+from analytics.content_ceiling import evaluate_episode
 
 def _internal_knobs(cfg: dict, episode: int) -> dict:
     nv = cfg["novel"]
@@ -287,6 +288,18 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         score_obj = {"raw": str(score_obj)}
     predicted_retention = predict_retention(score_obj, fat, state.data.get("retention_engine"))
     state.set("predicted_retention", predicted_retention)
+    ceiling_meta = {
+        "genre_bucket": pj["genre_bucket"],
+        "platform": pj["platform"],
+        "event_plan": event_plan,
+        "cliffhanger": meta.get("cliffhanger", ""),
+        "cliffhanger_plan": meta.get("cliffhanger_plan", {}),
+        "conflict": story_state.get("conflict", {}),
+        "retention": state.data.get("retention_engine", {}),
+        "tension": state.data.get("tension_wave", {}),
+    }
+    content_ceiling = evaluate_episode(episode_text, ceiling_meta)
+    meta["content_ceiling"] = content_ceiling
 
     # update score history
     hist = state.get("score_history", [])
@@ -321,6 +334,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
             "predicted_next_episode": predicted_retention,
             "pressure_state": state.data.get("retention_engine", {}),
         },
+        "content_ceiling": content_ceiling,
         "cost": cost.snapshot(),
     }
     if cfg["output"].get("save_metrics_jsonl", True):
