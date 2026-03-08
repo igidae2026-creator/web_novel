@@ -46,7 +46,7 @@ class PROMPTS:
 """
 
     @staticmethod
-    def episode_plan(cfg: dict, outline: str, ep: int, knobs: dict, ext_snapshot: dict, fatigue_directive: str, sub_engine_key: str) -> str:
+    def episode_plan(cfg: dict, outline: str, ep: int, knobs: dict, ext_snapshot: dict, fatigue_directive: str, sub_engine_key: str, story_state: dict | None = None) -> str:
         pj = cfg["project"]
         nv = cfg["novel"]
         plat = PLATFORM_STRATEGY.get(pj["platform"], {})
@@ -59,6 +59,39 @@ class PROMPTS:
 
 현재 노브(knobs):
 {knobs}
+
+캐릭터 상태:
+{(story_state or {}).get('character', {})}
+
+갈등 상태:
+{(story_state or {}).get('conflict', {})}
+
+이벤트 계획:
+{(story_state or {}).get('event', {})}
+
+클리프행어 계획:
+{(story_state or {}).get('cliffhanger', {})}
+
+텐션 파형:
+{(story_state or {}).get('tension', {})}
+
+리텐션 압력:
+{(story_state or {}).get('retention', {})}
+
+적대자 장기 계획:
+{(story_state or {}).get('antagonist', {})}
+
+패턴 메모리:
+{(story_state or {}).get('pattern_memory', {})}
+
+시장/연재 상태:
+{(story_state or {}).get('market', {})}
+
+포트폴리오 메모리:
+{(story_state or {}).get('portfolio', {})}
+
+교차 트랙 지표:
+{((story_state or {}).get('portfolio', {}) or {}).get('portfolio_metrics', {})}
 
 외부 랭킹 관측치:
 {ext_snapshot}
@@ -74,10 +107,16 @@ class PROMPTS:
 - 각 씬: 목표/갈등/감정 변곡/전개/마무리 훅
 - 회차 전체 감정 변곡 3회 이상
 - 이전 회차 대비 갈등 단계 상승
+- 주인공의 욕망/공포/약점이 선택과 손실에 직접 반영되어야 함
+- 적대자의 다음 수와 장기 의도가 씬 전개에 드러나야 함
+- 최근 과사용 패턴을 반복하지 말고 변주를 만들 것
+- 플랫폼 페이싱, 유료구간 압력, 독자 신뢰를 해치지 않도록 연재형 보상 구조를 유지할 것
+- 다른 트랙에서 이미 과밀한 패턴은 피하고, 포트폴리오 차원의 차별화를 유지할 것
+- 포트폴리오 정책 지시가 있으면 우선 반영하고, 교차 트랙 간 위험 분산과 출시 간섭 완화를 함께 고려할 것
 """
 
     @staticmethod
-    def episode_draft_json(cfg: dict, plan: str, ep: int, knobs: dict, style: StyleVector, sub_engine_key: str) -> str:
+    def episode_draft_json(cfg: dict, plan: str, ep: int, knobs: dict, style: StyleVector, sub_engine_key: str, story_state: dict | None = None) -> str:
         pj = cfg["project"]
         nv = cfg["novel"]
         plat = PLATFORM_STRATEGY.get(pj["platform"], {})
@@ -92,6 +131,9 @@ class PROMPTS:
 노브(knobs):
 {knobs}
 
+스토리 상태:
+{story_state or {}}
+
 문체/리듬 제약:
 {constraints_text(style)}\n자료 기반 제약(있으면 반영):\n{profile_constraints_text(knobs.get('profile'))}
 
@@ -103,6 +145,7 @@ class PROMPTS:
 - 감정 변곡 3회 이상
 - 반복 최소화
 - 마지막은 강한 클리프행어
+- 주인공은 욕망 때문에 움직이고 공포 때문에 망설이며 약점 때문에 비용을 치러야 한다
 - 본문 길이는 대략 {nv['words_per_episode_min']}~{nv['words_per_episode_max']}자 수준의 한국어 분량을 목표로 한다(토큰 언급 금지)
 
 출력 형식: STRICT JSON ONLY
@@ -115,7 +158,7 @@ class PROMPTS:
 """
 
     @staticmethod
-    def episode_rewrite_json(cfg: dict, draft_json: dict, ep: int, knobs: dict, style: StyleVector, sub_engine_key: str, viral_required: bool) -> str:
+    def episode_rewrite_json(cfg: dict, draft_json: dict, ep: int, knobs: dict, style: StyleVector, sub_engine_key: str, viral_required: bool, story_state: dict | None = None, repair_plan: dict | None = None) -> str:
         pj = cfg["project"]
         nv = cfg["novel"]
         plat = PLATFORM_STRATEGY.get(pj["platform"], {})
@@ -129,14 +172,22 @@ class PROMPTS:
 - 갈등 단계 상승 강화
 - 대사 선명화
 - 감정 흐름 선명화
+- 주인공의 약점이 실제 위험과 손실 비용으로 드러나야 함
 - 문체/리듬 제약 준수
 - 클리프행어 강화
 - 바이럴 요소(quote_line/comment_hook/cliffhanger) 유지 또는 강화
+- 인과 보수 지시가 있으면 우선 반영
 
 플랫폼: {pj['platform']} / 장르: {bucket} / 엔진: {sub.label}
 페이싱: {plat.get('pacing','balanced')}
 노브(knobs):
 {knobs}
+
+스토리 상태:
+{story_state or {}}
+
+인과 보수 지시:
+{repair_plan or {}}
 
 문체/리듬 제약:
 {constraints_text(style)}\n자료 기반 제약(있으면 반영):\n{profile_constraints_text(knobs.get('profile'))}

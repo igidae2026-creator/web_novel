@@ -9,6 +9,37 @@ from .viral import validate_viral
 from .json_parse import parse_json_strict
 from .prompts import PROMPTS
 from .profile import load_profiles, select_profile
+from .character_arc import prepare_character_arc, character_prompt_payload, update_character_arc
+from .conflict_memory import prepare_conflict_memory, conflict_prompt_payload, update_conflict_memory
+from .competition_model import update_competition_state
+from .market_policy_engine import apply_market_policy
+from .damping_controller import damp_knobs
+from .intensity_lock import clamp_knobs, apply_freeze, register_change
+from .quality_gate import quality_gate
+from .event_generator import generate_event_plan, event_prompt_payload, register_story_event
+from .cliffhanger_engine import generate_cliffhanger_plan, enforce_cliffhanger
+from .tension_wave import prepare_tension_wave, apply_tension_wave, update_tension_wave, tension_prompt_payload
+from .predictive_retention import build_retention_state, predict_retention, retention_prompt_payload
+from .information_emotion import prepare_information_emotion, information_prompt_payload
+from .world_logic import update_world_state, world_prompt_payload
+from .reward_serialization import update_reward_serialization
+from .story_state import ensure_story_state
+from .multi_objective import build_multi_objective_scores, multi_objective_balance
+from .regression_guard import regression_decision
+from .scene_causality import validate_scene_causality
+from .antagonist_planner import prepare_antagonist_plan, antagonist_prompt_payload
+from .pattern_memory import update_pattern_memory, pattern_prompt_payload
+from .market_serialization import market_prompt_payload, update_market_serialization
+from .causal_repair import (
+    assess_causal_closure,
+    build_causal_repair_plan,
+    finalize_causal_repair_cycle,
+    record_causal_repair_attempt,
+    start_causal_repair_cycle,
+    store_causal_repair_plan,
+)
+from .portfolio_memory import portfolio_prompt_payload, update_portfolio_memory
+from analytics.content_ceiling import evaluate_episode
 
 def _internal_knobs(cfg: dict, episode: int) -> dict:
     nv = cfg["novel"]
@@ -151,6 +182,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     outline = state.get("outline")
     if not outline:
         outline = build_outline(cfg, state, llm, cost, ext)
+    ensure_story_state(state.data, cfg=cfg, outline=outline)
 
     sub_key = pj.get("sub_engine", "AUTO")
 
@@ -178,6 +210,8 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     original_knobs = knobs.copy()
     knobs = _apply_platform_bias(cfg, knobs)
     knobs = _apply_external(cfg, knobs, ext, episode)
+    prepare_tension_wave(state.data, episode=episode)
+    knobs = apply_tension_wave(knobs, state.data.get("tension_wave", {}))
     knobs = damp_knobs(cfg, knobs, original_knobs)
     knobs = clamp_knobs(cfg, knobs)
     prof = select_profile(profiles, pj["platform"], pj["genre_bucket"])
@@ -187,14 +221,53 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     knobs["fatigue_reset"] = fat_pack["needs_reset"]
     knobs["reset_level"] = fat_pack["reset_level"]
 
+    prepare_character_arc(state.data, cfg=cfg, outline=outline, episode=episode)
+    prepare_conflict_memory(state.data, episode=episode)
+    prepare_antagonist_plan(state.data, episode=episode)
+    update_pattern_memory(state.data, episode=episode)
+    update_market_serialization(state.data, episode=episode, cfg=cfg)
+    update_portfolio_memory(state.data, cfg=cfg)
+    event_plan = generate_event_plan(state.data, episode=episode)
+    prepare_antagonist_plan(state.data, episode=episode, event_plan=event_plan)
+    prepare_information_emotion(state.data, episode=episode, event_plan=event_plan)
+    cliffhanger_plan = generate_cliffhanger_plan(
+        character_prompt_payload(state.data),
+        conflict_prompt_payload(state.data),
+        event_plan,
+    )
+    build_retention_state(state.data, event_plan=event_plan, cliffhanger_plan=cliffhanger_plan)
+    story_state = {
+        "character": character_prompt_payload(state.data),
+        "conflict": conflict_prompt_payload(state.data),
+        "event": event_prompt_payload(event_plan),
+        "cliffhanger": cliffhanger_plan,
+        "tension": tension_prompt_payload(state.data),
+        "retention": retention_prompt_payload(state.data),
+        "information": information_prompt_payload(state.data),
+        "world": world_prompt_payload(state.data),
+        "antagonist": antagonist_prompt_payload(state.data),
+        "pattern_memory": pattern_prompt_payload(state.data),
+        "market": market_prompt_payload(state.data),
+        "portfolio": portfolio_prompt_payload(state.data),
+    }
+
     snap = ext.latest(pj["platform"], pj["genre_bucket"]) or {}
-    plan_prompt = PROMPTS.episode_plan(cfg, outline, episode, knobs, snap, fat_pack["directive"], sub_key)
+    plan_prompt = PROMPTS.episode_plan(
+        cfg,
+        outline,
+        episode,
+        knobs,
+        snap,
+        fat_pack["directive"],
+        sub_key,
+        story_state=story_state,
+    )
     plan_resp = llm.call(plan_prompt, temperature=0.35)
     cost.add_usage(plan_resp)
     plan = plan_resp.output_text
 
     # draft JSON
-    draft_prompt = PROMPTS.episode_draft_json(cfg, plan, episode, knobs, style, sub_key)
+    draft_prompt = PROMPTS.episode_draft_json(cfg, plan, episode, knobs, style, sub_key, story_state=story_state)
     draft_resp = llm.call(draft_prompt, temperature=0.78)
     cost.add_usage(draft_resp)
     ok, draft_obj = parse_json_strict(draft_resp.output_text)
@@ -204,27 +277,70 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     # revision passes, enforce viral
     viral_required = bool(cfg["quality"].get("viral_required", True))
     max_passes = int(cfg["limits"].get("max_revision_passes", 2))
+    repair_budget = int(cfg["limits"].get("causal_repair_retry_budget", max_passes) or max_passes)
     cur_obj = draft_obj
-    for _ in range(max_passes):
-        rewrite_prompt = PROMPTS.episode_rewrite_json(cfg, cur_obj, episode, knobs, style, sub_key, viral_required)
+    initial_causal_report = validate_scene_causality(
+        str(cur_obj.get("episode_text", "")),
+        story_state=state.data.get("story_state_v2", {}),
+        event_plan=event_plan,
+        cliffhanger_plan=cliffhanger_plan,
+    )
+    initial_repair_plan = build_causal_repair_plan(
+        initial_causal_report,
+        story_state=state.data.get("story_state_v2", {}),
+        event_plan=event_plan,
+        cliffhanger_plan=cliffhanger_plan,
+    )
+    start_causal_repair_cycle(state.data, retry_budget=repair_budget, causal_report=initial_causal_report, repair_plan=initial_repair_plan)
+    latest_causal_report = initial_causal_report
+    latest_repair_plan = initial_repair_plan
+    for attempt in range(1, repair_budget + 1):
+        closure = assess_causal_closure(latest_causal_report, latest_repair_plan)
+        viral_ok = True
+        if viral_required:
+            viral_ok, _msg = validate_viral(cur_obj, cliffhanger_plan=cliffhanger_plan)
+        if closure["passed"] and viral_ok:
+            break
+        rewrite_prompt = PROMPTS.episode_rewrite_json(
+            cfg, cur_obj, episode, knobs, style, sub_key, viral_required, story_state=story_state, repair_plan=latest_repair_plan
+        )
         rewrite_resp = llm.call(rewrite_prompt, temperature=0.55)
         cost.add_usage(rewrite_resp)
         ok2, obj2 = parse_json_strict(rewrite_resp.output_text)
         if ok2 and isinstance(obj2, dict):
             cur_obj = obj2
-        # validate viral if required
-        if not viral_required:
-            break
-        valid, _msg = validate_viral(cur_obj)
-        if valid:
+        latest_causal_report = validate_scene_causality(
+            str(cur_obj.get("episode_text", "")),
+            story_state=state.data.get("story_state_v2", {}),
+            event_plan=event_plan,
+            cliffhanger_plan=cliffhanger_plan,
+        )
+        latest_repair_plan = build_causal_repair_plan(
+            latest_causal_report,
+            story_state=state.data.get("story_state_v2", {}),
+            event_plan=event_plan,
+            cliffhanger_plan=cliffhanger_plan,
+        )
+        record_causal_repair_attempt(
+            state.data,
+            attempt_index=attempt,
+            causal_report=latest_causal_report,
+            repair_plan=latest_repair_plan,
+        )
+        if attempt >= max_passes and not viral_required and assess_causal_closure(latest_causal_report, latest_repair_plan)["passed"]:
             break
 
     episode_text = str(cur_obj.get("episode_text","")).strip()
-    meta = {
+    meta = enforce_cliffhanger(
+        {
         "quote_line": str(cur_obj.get("quote_line","")).strip(),
         "comment_hook": str(cur_obj.get("comment_hook","")).strip(),
         "cliffhanger": str(cur_obj.get("cliffhanger","")).strip(),
-    }
+        "event_plan": event_plan,
+        "cliffhanger_plan": cliffhanger_plan,
+        },
+        cliffhanger_plan,
+    )
 
     # style update
     new_style = compute_style_vector(episode_text)
@@ -238,6 +354,55 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     ok3, score_obj = parse_json_strict(sc_resp.output_text)
     if not (ok3 and isinstance(score_obj, dict)):
         score_obj = {"raw": str(score_obj)}
+    predicted_retention = predict_retention(score_obj, fat, state.data.get("retention_engine"))
+    state.set("predicted_retention", predicted_retention)
+    causal_report = validate_scene_causality(
+        episode_text,
+        story_state=state.data.get("story_state_v2", {}),
+        event_plan=event_plan,
+        cliffhanger_plan=cliffhanger_plan,
+    )
+    repair_plan = build_causal_repair_plan(
+        causal_report,
+        story_state=state.data.get("story_state_v2", {}),
+        event_plan=event_plan,
+        cliffhanger_plan=cliffhanger_plan,
+    )
+    finalize_causal_repair_cycle(state.data, causal_report=causal_report, repair_plan=repair_plan)
+    store_causal_repair_plan(state.data, repair_plan)
+    objective_scores = build_multi_objective_scores(
+        score_obj,
+        retention_state=state.data.get("retention_engine", {}),
+        story_state=state.data.get("story_state_v2", {}),
+        causal_report=causal_report,
+    )
+    objective_balance = multi_objective_balance(
+        score_obj,
+        retention_state=state.data.get("retention_engine", {}),
+        story_state=state.data.get("story_state_v2", {}),
+        causal_report=causal_report,
+    )
+    ceiling_meta = {
+        "genre_bucket": pj["genre_bucket"],
+        "platform": pj["platform"],
+        "event_plan": event_plan,
+        "cliffhanger": meta.get("cliffhanger", ""),
+        "cliffhanger_plan": meta.get("cliffhanger_plan", {}),
+        "conflict": story_state.get("conflict", {}),
+        "retention": state.data.get("retention_engine", {}),
+        "tension": state.data.get("tension_wave", {}),
+        "story_state": state.data.get("story_state_v2", {}),
+        "multi_objective": objective_scores,
+        "scene_causality": causal_report,
+    }
+    content_ceiling = evaluate_episode(episode_text, ceiling_meta)
+    meta["content_ceiling"] = content_ceiling
+    meta["multi_objective"] = {
+        "axes": objective_scores,
+        "balance": objective_balance,
+    }
+    meta["scene_causality"] = causal_report
+    meta["causal_repair"] = repair_plan
 
     # update score history
     hist = state.get("score_history", [])
@@ -268,14 +433,42 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "scores": score_obj,
         "style_vector": state.get("style_vector"),
         "fatigue": fat_pack,
+        "retention": {
+            "predicted_next_episode": predicted_retention,
+            "pressure_state": state.data.get("retention_engine", {}),
+        },
+        "content_ceiling": content_ceiling,
         "cost": cost.snapshot(),
     }
     if cfg["output"].get("save_metrics_jsonl", True):
         append_jsonl(os.path.join(out_dir, "metrics.jsonl"), record, safe_mode=cfg.get("safe_mode", False), project_dir_for_backup=out_dir)
 
     # update state
-    update_character_arc(state.data, episode)
-    update_conflict_memory(state.data, episode)
+    register_story_event(state.data, event_plan)
+    update_character_arc(state.data, episode, score_obj=score_obj, event_plan=event_plan)
+    update_conflict_memory(state.data, episode, score_obj=score_obj, event_plan=event_plan)
+    update_tension_wave(state.data, episode, score_obj=score_obj, event_plan=event_plan)
+    update_world_state(state.data, episode, event_plan=event_plan)
+    update_reward_serialization(state.data, episode, event_plan=event_plan)
+    prepare_information_emotion(state.data, episode=episode, event_plan=event_plan)
+    update_pattern_memory(state.data, episode=episode, event_plan=event_plan, cliffhanger_plan=cliffhanger_plan)
+    update_market_serialization(state.data, episode=episode, cfg=cfg, event_plan=event_plan)
+    update_portfolio_memory(state.data, cfg=cfg, event_plan=event_plan)
+    next_objective = build_multi_objective_scores(
+        score_obj,
+        retention_state=state.data.get("retention_engine", {}),
+        story_state=state.data.get("story_state_v2", {}),
+        causal_report=causal_report,
+    )
+    accepted, regression_report = regression_decision(objective_scores, next_objective)
+    state.set("regression_report", regression_report)
+    if not accepted:
+        state.data.setdefault("story_state_v2", {}).setdefault("control", {}).setdefault("regression_flags", []).append(
+            {
+                "episode": episode,
+                "dropped_axes": regression_report.get("dropped_axes", []),
+            }
+        )
     thresholds = cfg.get('quality',{})
     if not quality_gate(score_obj, thresholds):
         knobs['hook_intensity'] = min(0.99, knobs.get('hook_intensity',0.7)+0.1)

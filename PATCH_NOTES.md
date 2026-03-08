@@ -19,3 +19,45 @@ Because this layer is:
 - content-only
 - orthogonal to revenue/LLM/runtime
 and should not create circular imports with `llm/` or `core/`.
+
+## 2026-03-09 Fun Engine Step 1
+
+- replaced fixed 10-episode character stage ticking with a desire/fear/weakness engine in `engine/character_arc.py`
+- injected character state into episode planning, drafting, and rewrite prompts
+- added direct tests for pressure-based character state preparation and outcome-driven updates
+
+## 2026-03-09 Fun Engine Step 2
+
+- replaced integer-only conflict memory with a consequence-driven thread engine in `engine/conflict_memory.py`
+- added conflict state injection to prompts so scenes are generated from open threads and escalation mode
+- added tests for open-thread pressure and fallout thread creation after losses
+
+## 2026-03-09 Fun Engine Step 3
+
+- added a typed event generator in `engine/event_generator.py` for `reveal`, `betrayal`, `reversal`, `loss`, and `arrival`
+- wired event plans into prompt state, episode metadata, and post-episode state updates
+- added tests for typed event payload generation and event history registration
+
+## 2026-03-09 Fun Engine Step 4
+
+- added a structural cliffhanger generator and validator in `engine/cliffhanger_engine.py`
+- replaced cliffhanger length-only validation with withheld-consequence validation
+- upgraded content ceiling cliffhanger analysis to read structural cliffhanger and event metadata
+
+## 2026-03-09 Fun Engine Step 5
+
+- added `engine/tension_wave.py` to target spike / pressure / release bands instead of flat intensity
+- applied tension-wave control to generation knobs before drafting and exposed the wave state to prompts
+- added tests for spike targeting and post-episode peak tracking
+
+## 2026-03-09 Fun Engine Step 6
+
+- upgraded `engine/predictive_retention.py` from score-only prediction to unresolved-thread pressure modeling
+- added retention state to story prompts and metrics logging
+- added tests for unresolved pressure modeling and pressure-sensitive retention prediction
+
+## 2026-03-09 Iterative Ceiling Search Pass 1
+
+- identified the analysis loop as the next structural bottleneck after the six core engines
+- upgraded content ceiling event extraction to ingest typed events, conflict state, cliffhanger pressure, tension, and retention metadata
+- integrated content ceiling evaluation directly into `engine/pipeline.py` so every episode logs structural fun diagnostics

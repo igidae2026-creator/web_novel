@@ -1,25 +1,25 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Dict, List
-
-CLIFF = {
-  "question": ["?", "？"],
-  "ellipsis": ["…"],
-  "pre_peak_cut": ["그 순간", "바로 그때", "하지만"],
-  "reveal_delay": ["아직", "말하지 않았다", "답은", "진실은"],
-  "threat": ["위협", "추격", "협박", "총", "칼", "죽"],
-}
-
-def _count_any(text: str, ms: List[str]) -> int:
-    return sum(text.count(m) for m in ms)
+from typing import Dict, Any
 
 @dataclass
 class CliffStats:
     counts: Dict[str, int]
     dominant: str
 
-def classify(text: str) -> CliffStats:
-    tail = text[-900:] if len(text) > 900 else text
-    counts = {k: _count_any(tail, ms) for k, ms in CLIFF.items()}
-    dominant = max(counts.items(), key=lambda kv: kv[1])[0] if counts else "none"
+def classify(text: str, meta: Dict[str, Any] | None = None) -> CliffStats:
+    meta = dict(meta or {})
+    plan = meta.get("cliffhanger_plan") or {}
+    event_plan = meta.get("event_plan") or {}
+    tail = meta.get("cliffhanger") or (text[-240:] if len(text) > 240 else text)
+    mode = str(plan.get("mode") or "")
+    event_type = str(event_plan.get("type") or "")
+    counts = {
+        "open_question": int("?" in tail or "무엇" in tail or "누가" in tail),
+        "withheld_consequence": int(any(token in tail for token in ["대가", "진실", "끝나지", "붕괴", "배신"])),
+        "carryover_pressure": int(int(plan.get("carryover_pressure", 0) or 0) >= 5),
+        "event_link": int(bool(event_type)),
+        "mode_link": int(bool(mode)),
+    }
+    dominant = mode or event_type or max(counts.items(), key=lambda kv: kv[1])[0]
     return CliffStats(counts=counts, dominant=dominant)
