@@ -25,3 +25,9 @@ and should not create circular imports with `llm/` or `core/`.
 - replaced fixed 10-episode character stage ticking with a desire/fear/weakness engine in `engine/character_arc.py`
 - injected character state into episode planning, drafting, and rewrite prompts
 - added direct tests for pressure-based character state preparation and outcome-driven updates
+
+## 2026-03-09 Fun Engine Step 2
+
+- replaced integer-only conflict memory with a consequence-driven thread engine in `engine/conflict_memory.py`
+- added conflict state injection to prompts so scenes are generated from open threads and escalation mode
+- added tests for open-thread pressure and fallout thread creation after losses

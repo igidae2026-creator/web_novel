@@ -63,6 +63,9 @@ class PROMPTS:
 캐릭터 상태:
 {(story_state or {}).get('character', {})}
 
+갈등 상태:
+{(story_state or {}).get('conflict', {})}
+
 외부 랭킹 관측치:
 {ext_snapshot}
 

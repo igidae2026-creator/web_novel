@@ -10,7 +10,7 @@ from .json_parse import parse_json_strict
 from .prompts import PROMPTS
 from .profile import load_profiles, select_profile
 from .character_arc import prepare_character_arc, character_prompt_payload, update_character_arc
-from .conflict_memory import update_conflict_memory
+from .conflict_memory import prepare_conflict_memory, conflict_prompt_payload, update_conflict_memory
 from .competition_model import update_competition_state
 from .market_policy_engine import apply_market_policy
 from .damping_controller import damp_knobs
@@ -195,7 +195,11 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     knobs["reset_level"] = fat_pack["reset_level"]
 
     prepare_character_arc(state.data, cfg=cfg, outline=outline, episode=episode)
-    story_state = {"character": character_prompt_payload(state.data)}
+    prepare_conflict_memory(state.data, episode=episode)
+    story_state = {
+        "character": character_prompt_payload(state.data),
+        "conflict": conflict_prompt_payload(state.data),
+    }
 
     snap = ext.latest(pj["platform"], pj["genre_bucket"]) or {}
     plan_prompt = PROMPTS.episode_plan(
@@ -296,7 +300,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
 
     # update state
     update_character_arc(state.data, episode, score_obj=score_obj)
-    update_conflict_memory(state.data, episode)
+    update_conflict_memory(state.data, episode, score_obj=score_obj)
     thresholds = cfg.get('quality',{})
     if not quality_gate(score_obj, thresholds):
         knobs['hook_intensity'] = min(0.99, knobs.get('hook_intensity',0.7)+0.1)
