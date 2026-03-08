@@ -25,6 +25,7 @@ from engine.portfolio_signals import compute_portfolio_signals
 from engine.regression_guard import portfolio_signal_decision
 from engine.portfolio_orchestrator import build_portfolio_runtime_snapshot, rebalance_platform
 from engine.cross_track_release import build_cross_track_release_plan
+from engine.cross_track_release import apply_queue_release_outcome, apply_runtime_release_to_state, refresh_queue_release_runtime, resolve_queue_release_action
 import json
 import os
 import tempfile
@@ -516,3 +517,43 @@ def test_cross_track_release_scheduler_staggers_platform_overlap():
         assert actions["track_c"] == "hold"
         assert plan["interference_pressure"] >= 4
         assert memory["release_strategy"] == "staggered"
+
+
+def test_release_runtime_schedule_changes_queue_behavior():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        for name, retention, repetition in [("track_a", 0.78, 0.10), ("track_b", 0.72, 0.12), ("track_c", 0.58, 0.27)]:
+            tdir = os.path.join(tracks_root, name)
+            os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+            with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+                json.dump({"project": {"platform": "Munpia", "genre_bucket": "B"}}, f)
+            with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+                for _ in range(3):
+                    f.write(json.dumps({
+                        "meta": {"event_plan": {"type": "arrival"}},
+                        "content_ceiling": {"ceiling_total": 74},
+                        "retention": {"predicted_next_episode": retention},
+                        "scores": {"repetition_score": repetition},
+                    }) + "\n")
+        queue_state = {"status": "running", "track_dirs": [os.path.join(tracks_root, name) for name in ["track_a", "track_b", "track_c"]], "current_index": 0}
+        queue_state = refresh_queue_release_runtime(queue_state, tracks_root)
+        accelerate = resolve_queue_release_action(queue_state, os.path.join(tracks_root, "track_a"))
+        hold = resolve_queue_release_action(queue_state, os.path.join(tracks_root, "track_c"))
+        accelerate_outcome = apply_queue_release_outcome(queue_state, os.path.join(tracks_root, "track_a"), executed=True)
+        hold_outcome = apply_queue_release_outcome(queue_state, os.path.join(tracks_root, "track_c"), executed=False)
+
+        assert accelerate["action"] == "accelerate"
+        assert not accelerate_outcome["should_advance"]
+        assert hold["action"] == "hold"
+        assert hold_outcome["should_advance"]
+
+
+def test_runtime_release_alignment_updates_story_state():
+    state = {}
+    ensure_story_state(state)
+    runtime = apply_runtime_release_to_state(state, {"action": "accelerate", "alignment": 0.9, "slot_offset": 0, "hold_budget": 0, "accelerate_budget": 1})
+
+    assert runtime["action"] == "accelerate"
+    assert state["story_state_v2"]["portfolio_memory"]["release_strategy"] == "focused"
+    assert state["story_state_v2"]["portfolio_memory"]["release_guard"] >= 6

@@ -6,6 +6,7 @@ from engine.safe_io import safe_write_text
 from engine.track_queue import load_queue_state, save_queue_state
 from engine.track_runner import run_queue_step
 from engine.portfolio_orchestrator import rebalance_platform
+from engine.cross_track_release import refresh_queue_release_runtime
 
 LOCK_PATH = os.path.join("domains","webnovel","tracks",".queue_lock")
 LOCK_TTL_SECONDS = 600  # 10 minutes
@@ -56,6 +57,8 @@ def run_queue_loop(cfg: Dict[str, Any], max_steps: int = 1) -> Tuple[bool, str]:
             if q.get("status") != "running":
                 msg_last = f"Queue not running (status={q.get('status')})"
                 break
+            q = refresh_queue_release_runtime(q, os.path.join("domains", "webnovel", "tracks"))
+            save_queue_state(q)
             ok, msg = run_queue_step(cfg)
             msg_last = msg
             h["total_steps"] += 1

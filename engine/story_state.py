@@ -290,6 +290,14 @@ def _default_story_state(bucket: str | None, outline: str) -> Dict[str, Any]:
             "last_event_type": "",
             "last_cliffhanger_mode": "",
             "regression_flags": [],
+            "runtime_release": {
+                "action": "balanced",
+                "alignment": 0.0,
+                "slot_offset": 0,
+                "hold_budget": 0,
+                "accelerate_budget": 0,
+                "history": [],
+            },
             "causal_repair": {
                 "critical_issues": [],
                 "directives": [],
