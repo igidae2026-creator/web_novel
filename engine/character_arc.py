@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from .story_state import chemistry_pressure, ensure_story_state, sync_story_state
+
 
 CHARACTER_DEFAULTS = {
     "A": {
@@ -96,10 +98,11 @@ def prepare_character_arc(
     outline: str = "",
     episode: int = 1,
 ) -> Dict[str, Any]:
-    arcs = _ensure_roster(state, cfg=cfg, outline=outline)
-    conflict = state.get("conflict_engine", {})
-    pressure = int(conflict.get("threat_pressure", state.get("conflict_memory", 0)) or 0)
-    unresolved = len(conflict.get("threads", []) or [])
+    story_state = ensure_story_state(state, cfg=cfg, outline=outline)
+    cast = story_state["cast"]
+    relationships = story_state["relationships"]
+    world = story_state["world"]
+    conflict = story_state["conflict"]
     recent_scores = state.get("score_history", [])[-3:]
     weak_finish = sum(
         1
@@ -107,42 +110,61 @@ def prepare_character_arc(
         if float(score.get("hook_score", 0.0)) < 0.72 or float(score.get("escalation", 0.0)) < 0.68
     )
 
-    protagonist = arcs["protagonist"]
-    rival = arcs["rival"]
+    protagonist = cast["protagonist"]
+    rival = cast["rival"]
+    ally = cast["ally"]
+    rival_edge = relationships["protagonist:rival"]
+    ally_edge = relationships["protagonist:ally"]
+    pressure = int(conflict.get("threat_pressure", 5) or 5)
+    unresolved = len([thread for thread in conflict.get("threads", []) if thread.get("status") != "resolved"])
+    chemistry = chemistry_pressure(story_state)
+    instability = int(world.get("instability", 4) or 4)
 
-    protagonist["urgency"] = _clamp(5 + pressure + unresolved + weak_finish)
-    protagonist["relationship_pressure"] = _clamp(2 + unresolved + protagonist.get("backlash", 0) // 2)
+    protagonist["urgency"] = _clamp(4 + pressure + unresolved + weak_finish + instability // 2)
     protagonist["decision_pressure"] = _clamp(
-        protagonist["urgency"] + protagonist["relationship_pressure"] - protagonist.get("progress", 0) // 2
-    )
-    protagonist["dominant_need"] = (
-        "생존과 보호"
-        if protagonist["urgency"] >= 8
-        else "주도권 회복"
-        if protagonist["decision_pressure"] >= 7
-        else "약점 은폐"
+        protagonist["urgency"]
+        + rival_edge.get("relationship_debt", 0)
+        + ally_edge.get("dependency", 0) // 2
+        - protagonist.get("progress", 0) // 2
     )
     protagonist["surface_goal"] = (
-        "이번 회차 안에 손실을 막고 주도권을 일부라도 회복한다"
+        "이번 회차 안에 손실을 막고 관계 붕괴를 지연시키며 주도권을 일부라도 회복한다"
         if protagonist["urgency"] >= 8
-        else "상대보다 먼저 움직여 손해를 뒤집는다"
+        else "상대보다 먼저 움직여 판의 규칙을 자기 쪽으로 기울인다"
     )
+    protagonist["inner_need"] = (
+        "힘의 과시보다 누구를 지킬지 선택한다"
+        if ally_edge.get("trust", 0) <= 5
+        else "통제 대신 신뢰를 받아들인다"
+    )
+    protagonist["emotion"] = "cornered" if protagonist["urgency"] >= 8 else "strained"
 
-    rival["urgency"] = _clamp(4 + pressure + episode // 12)
-    rival["decision_pressure"] = _clamp(rival["urgency"] + unresolved)
+    rival["urgency"] = _clamp(4 + pressure + chemistry // 2 + episode // 10)
+    rival["decision_pressure"] = _clamp(rival["urgency"] + rival_edge.get("chemistry", 0) // 2 + unresolved)
     rival["surface_goal"] = (
-        "주인공이 다음 선택에서 더 큰 대가를 치르게 만든다"
+        "주인공이 관계와 힘 사이에서 틀린 선택을 하게 만든다"
         if unresolved
-        else "주인공의 약점을 다시 시험한다"
+        else "주인공의 약점을 다시 시험해 공개적으로 무너뜨린다"
+    )
+    rival["emotion"] = "obsessive" if rival_edge.get("chemistry", 0) >= 6 else "predatory"
+
+    ally["urgency"] = _clamp(3 + instability + ally_edge.get("dependency", 0) // 2)
+    ally["decision_pressure"] = _clamp(ally["urgency"] + ally_edge.get("relationship_debt", 0))
+    ally["surface_goal"] = (
+        "주인공을 돕되 돌이킬 수 없는 손실은 피한다"
+        if world.get("order", 5) >= 5
+        else "곧 올 붕괴를 대비해 숨은 출구를 마련한다"
     )
 
-    arcs["episode_focus"] = {
+    state["character_arcs"]["episode_focus"] = {
         "pressure_sources": unresolved,
         "weak_finish_count": weak_finish,
         "episode": episode,
+        "chemistry_pressure": chemistry,
     }
-    state["character_arcs"] = arcs
-    return arcs
+    state["story_state_v2"] = story_state
+    sync_story_state(state)
+    return state["character_arcs"]
 
 
 def update_character_arc(
@@ -151,9 +173,11 @@ def update_character_arc(
     score_obj: Dict[str, Any] | None = None,
     event_plan: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
-    arcs = _ensure_roster(state)
-    protagonist = arcs["protagonist"]
-    rival = arcs["rival"]
+    story_state = ensure_story_state(state)
+    protagonist = story_state["cast"]["protagonist"]
+    rival = story_state["cast"]["rival"]
+    ally = story_state["cast"]["ally"]
+    relationships = story_state["relationships"]
     score_obj = dict(score_obj or {})
     event_plan = dict(event_plan or {})
 
@@ -163,16 +187,21 @@ def update_character_arc(
 
     if hook >= 0.75 and escalation >= 0.70:
         protagonist["progress"] = _clamp(protagonist.get("progress", 0) + 1)
-        protagonist["last_outcome"] = "advance"
+        outcome = "advance"
     else:
         protagonist["backlash"] = _clamp(protagonist.get("backlash", 0) + 1)
-        protagonist["last_outcome"] = "setback"
+        outcome = "setback"
 
-    if event_type in {"loss", "betrayal"}:
+    if event_type in {"loss", "betrayal", "collapse"}:
         protagonist["backlash"] = _clamp(protagonist.get("backlash", 0) + 2)
         rival["progress"] = _clamp(rival.get("progress", 0) + 1)
-    elif event_type in {"reveal", "reversal", "arrival"}:
+        relationships["protagonist:rival"]["relationship_debt"] = _clamp(relationships["protagonist:rival"].get("relationship_debt", 0) + 2)
+    elif event_type in {"reveal", "reversal", "arrival", "power_shift", "false_victory"}:
         protagonist["progress"] = _clamp(protagonist.get("progress", 0) + 1)
+        relationships["protagonist:rival"]["chemistry"] = _clamp(relationships["protagonist:rival"].get("chemistry", 0) + 1)
+    if event_type in {"sacrifice", "misunderstanding"}:
+        ally["backlash"] = _clamp(ally.get("backlash", 0) + 1)
+        relationships["protagonist:ally"]["trust"] = _clamp(relationships["protagonist:ally"].get("trust", 0) - 1)
 
     protagonist["urgency"] = _clamp(
         protagonist.get("urgency", 6) + protagonist.get("backlash", 0) - protagonist.get("progress", 0) // 2
@@ -181,16 +210,20 @@ def update_character_arc(
         protagonist.get("decision_pressure", 6) + protagonist.get("backlash", 0) - protagonist.get("progress", 0)
     )
     rival["urgency"] = _clamp(rival.get("urgency", 5) + episode // 20 + rival.get("progress", 0))
-
-    arcs["last_episode"] = episode
-    state["character_arcs"] = arcs
-    return arcs
+    story_state["history"]["outcomes"].append(outcome)
+    story_state["history"]["outcomes"] = story_state["history"]["outcomes"][-12:]
+    state["story_state_v2"] = story_state
+    sync_story_state(state)
+    return state["character_arcs"]
 
 
 def character_prompt_payload(state: Dict[str, Any]) -> Dict[str, Any]:
-    arcs = _ensure_roster(state)
+    ensure_story_state(state)
+    arcs = state["character_arcs"]
     protagonist = arcs["protagonist"]
     rival = arcs["rival"]
+    cast = state["story_state_v2"]["cast"]
+    relationships = state["story_state_v2"]["relationships"]
     return {
         "anchor": arcs.get("anchor", "주인공"),
         "protagonist": {
@@ -200,6 +233,10 @@ def character_prompt_payload(state: Dict[str, Any]) -> Dict[str, Any]:
             "weakness": protagonist["weakness"],
             "misbelief": protagonist["misbelief"],
             "dominant_need": protagonist["dominant_need"],
+            "wound": cast["protagonist"]["wound"],
+            "moral_limit": cast["protagonist"]["moral_limit"],
+            "obsession": cast["protagonist"]["obsession"],
+            "contradiction": cast["protagonist"]["contradiction"],
             "urgency": protagonist["urgency"],
             "decision_pressure": protagonist["decision_pressure"],
             "relationship_pressure": protagonist["relationship_pressure"],
@@ -215,6 +252,10 @@ def character_prompt_payload(state: Dict[str, Any]) -> Dict[str, Any]:
             "urgency": rival["urgency"],
             "decision_pressure": rival["decision_pressure"],
             "progress": rival["progress"],
+        },
+        "relationships": {
+            "protagonist_rival": relationships["protagonist:rival"],
+            "protagonist_ally": relationships["protagonist:ally"],
         },
         "episode_focus": arcs.get("episode_focus", {}),
     }

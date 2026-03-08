@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from .story_state import ensure_story_state, sync_story_state
+
 
 def _clamp_float(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return max(low, min(high, float(value)))
@@ -12,16 +14,8 @@ def _clamp_int(value: int, low: int = 0, high: int = 10) -> int:
 
 
 def prepare_tension_wave(state: Dict[str, Any], episode: int) -> Dict[str, Any]:
-    tension = state.get("tension_wave")
-    if not isinstance(tension, dict):
-        tension = {
-            "target_tension": 7,
-            "current_tension": 6,
-            "peak_count": 0,
-            "release_debt": 0,
-            "spike_debt": 1,
-            "band": "pressure",
-        }
+    story_state = ensure_story_state(state)
+    tension = story_state.get("pacing", {})
 
     recent_events = list(state.get("story_events", []) or [])[-3:]
     recent_scores = state.get("score_history", [])[-3:]
@@ -30,9 +24,11 @@ def prepare_tension_wave(state: Dict[str, Any], episode: int) -> Dict[str, Any]:
         if recent_scores
         else 0.7
     )
-    conflict = state.get("conflict_engine", {})
+    conflict = story_state.get("conflict", {})
+    serialization = story_state.get("serialization", {})
     pressure = int(conflict.get("threat_pressure", 5) or 5)
     consequence = int(conflict.get("consequence_level", 5) or 5)
+    sustainability = int(serialization.get("sustainability", 6) or 6)
 
     cycle = episode % 4
     base_target = 8 if cycle in (0, 3) else 6
@@ -42,20 +38,23 @@ def prepare_tension_wave(state: Dict[str, Any], episode: int) -> Dict[str, Any]:
         base_target += 1
     if tension.get("release_debt", 0) >= 2:
         base_target -= 1
+    if sustainability <= 4:
+        base_target -= 1
 
     target_tension = _clamp_int(base_target + max(0, pressure - 6) + max(0, consequence - 6))
     band = "spike" if target_tension >= 8 else "release" if target_tension <= 5 else "pressure"
 
     tension["target_tension"] = target_tension
-    tension["band"] = band
-    state["tension_wave"] = tension
-    return tension
+    tension["target_band"] = band
+    state["story_state_v2"] = story_state
+    sync_story_state(state)
+    return state["tension_wave"]
 
 
 def apply_tension_wave(knobs: Dict[str, Any], tension: Dict[str, Any]) -> Dict[str, Any]:
     adjusted = dict(knobs)
     target = int(tension.get("target_tension", 7) or 7)
-    band = str(tension.get("band", "pressure"))
+    band = str(tension.get("band", tension.get("target_band", "pressure")))
 
     if band == "spike":
         adjusted["hook_intensity"] = _clamp_float(float(adjusted.get("hook_intensity", 0.7)) + 0.08)
@@ -79,7 +78,9 @@ def update_tension_wave(
     score_obj: Dict[str, Any] | None = None,
     event_plan: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
-    tension = prepare_tension_wave(state, episode)
+    story_state = ensure_story_state(state)
+    tension = story_state.get("pacing", {})
+    prepare_tension_wave(state, episode)
     score_obj = dict(score_obj or {})
     event_plan = dict(event_plan or {})
 
@@ -102,11 +103,17 @@ def update_tension_wave(
     if str(event_plan.get("type", "")) in {"loss", "betrayal", "arrival"}:
         tension["peak_count"] = _clamp_int(tension.get("peak_count", 0) + 1)
 
-    state["tension_wave"] = tension
-    return tension
+    band = tension.get("target_band", "pressure")
+    rhythm_window = list(tension.get("rhythm_window", []) or [])
+    rhythm_window.append(band)
+    tension["rhythm_window"] = rhythm_window[-6:]
+    state["story_state_v2"] = story_state
+    sync_story_state(state)
+    return state["tension_wave"]
 
 
 def tension_prompt_payload(state: Dict[str, Any]) -> Dict[str, Any]:
+    ensure_story_state(state)
     tension = state.get("tension_wave", {})
     return {
         "target_tension": tension.get("target_tension", 7),

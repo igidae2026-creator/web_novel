@@ -20,6 +20,12 @@ from .event_generator import generate_event_plan, event_prompt_payload, register
 from .cliffhanger_engine import generate_cliffhanger_plan, enforce_cliffhanger
 from .tension_wave import prepare_tension_wave, apply_tension_wave, update_tension_wave, tension_prompt_payload
 from .predictive_retention import build_retention_state, predict_retention, retention_prompt_payload
+from .information_emotion import prepare_information_emotion, information_prompt_payload
+from .world_logic import update_world_state, world_prompt_payload
+from .reward_serialization import update_reward_serialization
+from .story_state import ensure_story_state
+from .multi_objective import build_multi_objective_scores, multi_objective_balance
+from .regression_guard import regression_decision
 from analytics.content_ceiling import evaluate_episode
 
 def _internal_knobs(cfg: dict, episode: int) -> dict:
@@ -163,6 +169,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     outline = state.get("outline")
     if not outline:
         outline = build_outline(cfg, state, llm, cost, ext)
+    ensure_story_state(state.data, cfg=cfg, outline=outline)
 
     sub_key = pj.get("sub_engine", "AUTO")
 
@@ -204,6 +211,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     prepare_character_arc(state.data, cfg=cfg, outline=outline, episode=episode)
     prepare_conflict_memory(state.data, episode=episode)
     event_plan = generate_event_plan(state.data, episode=episode)
+    prepare_information_emotion(state.data, episode=episode, event_plan=event_plan)
     cliffhanger_plan = generate_cliffhanger_plan(
         character_prompt_payload(state.data),
         conflict_prompt_payload(state.data),
@@ -217,6 +225,8 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "cliffhanger": cliffhanger_plan,
         "tension": tension_prompt_payload(state.data),
         "retention": retention_prompt_payload(state.data),
+        "information": information_prompt_payload(state.data),
+        "world": world_prompt_payload(state.data),
     }
 
     snap = ext.latest(pj["platform"], pj["genre_bucket"]) or {}
@@ -288,6 +298,16 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         score_obj = {"raw": str(score_obj)}
     predicted_retention = predict_retention(score_obj, fat, state.data.get("retention_engine"))
     state.set("predicted_retention", predicted_retention)
+    objective_scores = build_multi_objective_scores(
+        score_obj,
+        retention_state=state.data.get("retention_engine", {}),
+        story_state=state.data.get("story_state_v2", {}),
+    )
+    objective_balance = multi_objective_balance(
+        score_obj,
+        retention_state=state.data.get("retention_engine", {}),
+        story_state=state.data.get("story_state_v2", {}),
+    )
     ceiling_meta = {
         "genre_bucket": pj["genre_bucket"],
         "platform": pj["platform"],
@@ -297,9 +317,15 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "conflict": story_state.get("conflict", {}),
         "retention": state.data.get("retention_engine", {}),
         "tension": state.data.get("tension_wave", {}),
+        "story_state": state.data.get("story_state_v2", {}),
+        "multi_objective": objective_scores,
     }
     content_ceiling = evaluate_episode(episode_text, ceiling_meta)
     meta["content_ceiling"] = content_ceiling
+    meta["multi_objective"] = {
+        "axes": objective_scores,
+        "balance": objective_balance,
+    }
 
     # update score history
     hist = state.get("score_history", [])
@@ -345,6 +371,23 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     update_character_arc(state.data, episode, score_obj=score_obj, event_plan=event_plan)
     update_conflict_memory(state.data, episode, score_obj=score_obj, event_plan=event_plan)
     update_tension_wave(state.data, episode, score_obj=score_obj, event_plan=event_plan)
+    update_world_state(state.data, episode, event_plan=event_plan)
+    update_reward_serialization(state.data, episode, event_plan=event_plan)
+    prepare_information_emotion(state.data, episode=episode, event_plan=event_plan)
+    next_objective = build_multi_objective_scores(
+        score_obj,
+        retention_state=state.data.get("retention_engine", {}),
+        story_state=state.data.get("story_state_v2", {}),
+    )
+    accepted, regression_report = regression_decision(objective_scores, next_objective)
+    state.set("regression_report", regression_report)
+    if not accepted:
+        state.data.setdefault("story_state_v2", {}).setdefault("control", {}).setdefault("regression_flags", []).append(
+            {
+                "episode": episode,
+                "dropped_axes": regression_report.get("dropped_axes", []),
+            }
+        )
     thresholds = cfg.get('quality',{})
     if not quality_gate(score_obj, thresholds):
         knobs['hook_intensity'] = min(0.99, knobs.get('hook_intensity',0.7)+0.1)

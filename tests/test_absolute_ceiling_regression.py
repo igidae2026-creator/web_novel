@@ -1,0 +1,104 @@
+from engine.story_state import ensure_story_state
+from engine.information_emotion import prepare_information_emotion, information_prompt_payload
+from engine.world_logic import update_world_state
+from engine.reward_serialization import update_reward_serialization
+from engine.multi_objective import build_multi_objective_scores
+from engine.regression_guard import regression_decision
+from engine.predictive_retention import build_retention_state, predict_retention
+
+
+def test_information_asymmetry_promotes_reveal_structure():
+    state = {}
+    ensure_story_state(state, cfg={"project": {"genre_bucket": "B"}}, outline="배신 이후 진실 추적")
+    info_before = information_prompt_payload(state)
+    prepare_information_emotion(state, episode=3, event_plan={"type": "reveal"})
+    info_after = information_prompt_payload(state)
+
+    assert len(info_after["revealed_truths"]) >= 1
+    assert info_after["dramatic_irony"] >= len(info_before["hidden_truths"]) - 1
+
+
+def test_world_state_changes_after_major_event():
+    state = {}
+    ensure_story_state(state)
+    before = dict(state["story_state_v2"]["world"])
+    world = update_world_state(state, episode=7, event_plan={"type": "collapse"})
+
+    assert world["change_rate"] >= before["change_rate"] + 2
+    assert world["instability"] >= before["instability"] + 1
+
+
+def test_reward_density_does_not_force_sustainability_collapse():
+    state = {}
+    ensure_story_state(state)
+    update_reward_serialization(state, episode=4, event_plan={"type": "arrival"})
+    result = update_reward_serialization(state, episode=5, event_plan={"type": "false_victory"})
+
+    assert result["rewards"]["reward_density"] >= 4
+    assert result["serialization"]["sustainability"] >= 4
+
+
+def test_retention_accounts_for_chemistry_without_losing_balance():
+    state = {}
+    ensure_story_state(state)
+    state["story_state_v2"]["relationships"]["protagonist:rival"]["chemistry"] = 9
+    state["story_state_v2"]["relationships"]["protagonist:ally"]["chemistry"] = 8
+    retention = build_retention_state(
+        state,
+        event_plan={"type": "betrayal"},
+        cliffhanger_plan={"carryover_pressure": 8, "open_question": "누가 등을 돌렸는가"},
+    )
+    predicted = predict_retention(
+        {"emotion_density": 0.7, "hook_score": 0.72, "escalation": 0.75},
+        fatigue=0.15,
+        retention_state=retention,
+    )
+
+    assert retention["chemistry_pressure"] >= 5
+    assert predicted > 0.5
+
+
+def test_regression_guard_rejects_single_axis_overoptimization():
+    before = {
+        "fun": 0.70,
+        "coherence": 0.72,
+        "character_persuasiveness": 0.71,
+        "pacing": 0.69,
+        "retention": 0.70,
+        "emotional_payoff": 0.68,
+        "long_run_sustainability": 0.72,
+        "world_logic": 0.73,
+        "chemistry": 0.67,
+        "stability": 0.71,
+    }
+    after = dict(before)
+    after["fun"] = 0.92
+    after["long_run_sustainability"] = 0.55
+    after["coherence"] = 0.60
+
+    accepted, report = regression_decision(before, after)
+    assert not accepted
+    assert "long_run_sustainability" in report["dropped_axes"]
+
+
+def test_multi_objective_scores_include_sustainability_and_world_logic():
+    state = {}
+    ensure_story_state(state)
+    state["story_state_v2"]["world"]["instability"] = 3
+    state["story_state_v2"]["serialization"]["sustainability"] = 8
+    scores = build_multi_objective_scores(
+        {
+            "hook_score": 0.78,
+            "escalation": 0.74,
+            "emotion_density": 0.69,
+            "coherence": 0.76,
+            "world_logic": 0.8,
+            "chemistry_score": 0.72,
+            "repetition_score": 0.15,
+        },
+        retention_state={"unresolved_thread_pressure": 7, "curiosity_debt": 7},
+        story_state=state["story_state_v2"],
+    )
+
+    assert scores["long_run_sustainability"] >= 0.7
+    assert scores["world_logic"] >= 0.7
