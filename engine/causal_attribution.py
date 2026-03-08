@@ -41,9 +41,22 @@ def build_scene_event_attribution(
         scene_scores.append({"scene_index": idx, "text": unit[:80], "intensity": round(intensity, 4), "event_match": event_match, "causal_match": causal})
     scene_scores.sort(key=lambda item: (-item["intensity"], item["scene_index"]))
     top_scene = scene_scores[0] if scene_scores else {"scene_index": 0, "intensity": 0.0}
+    chain_links = []
+    for idx in range(max(0, len(scene_scores) - 1)):
+        left = scene_scores[idx]
+        right = scene_scores[idx + 1]
+        continuity = _clamp((float(left.get("causal_match", 0) or 0) * 0.18) + (float(right.get("event_match", 0) or 0) * 0.16) + max(0.0, 0.22 - abs(left["scene_index"] - right["scene_index"]) * 0.05))
+        chain_links.append({
+            "from_scene": int(left["scene_index"]),
+            "to_scene": int(right["scene_index"]),
+            "chain_strength": round(continuity, 4),
+        })
+    event_chain_strength = 0.0 if not chain_links else sum(float(item["chain_strength"]) for item in chain_links) / len(chain_links)
     return {
         "scene_units": scene_scores[:6],
         "top_scene_index": int(top_scene.get("scene_index", 0) or 0),
         "scene_signal": float(top_scene.get("intensity", 0.0) or 0.0),
         "scene_count": len(units),
+        "event_chain_links": chain_links[:6],
+        "event_chain_strength": round(event_chain_strength, 4),
     }

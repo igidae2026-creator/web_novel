@@ -83,7 +83,7 @@ def _track_runtime_outcome_memory(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 def _track_episode_attribution_memory(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     attributions = [row.get("episode_attribution") for row in rows if isinstance(row, dict) and isinstance(row.get("episode_attribution"), dict)]
     if not attributions:
-        return {"observed": 0, "retention_signal": 0.0, "pacing_signal": 0.0, "fatigue_signal": 0.0, "payoff_signal": 0.0, "scene_signal": 0.0}
+        return {"observed": 0, "retention_signal": 0.0, "pacing_signal": 0.0, "fatigue_signal": 0.0, "payoff_signal": 0.0, "scene_signal": 0.0, "event_chain_strength": 0.0}
     observed = len(attributions)
     return {
         "observed": observed,
@@ -92,6 +92,25 @@ def _track_episode_attribution_memory(rows: List[Dict[str, Any]]) -> Dict[str, A
         "fatigue_signal": round(sum(float(item.get("fatigue_signal", 0.0) or 0.0) for item in attributions) / observed, 4),
         "payoff_signal": round(sum(float(item.get("payoff_signal", 0.0) or 0.0) for item in attributions) / observed, 4),
         "scene_signal": round(sum(float(((item.get("fine_grained", {}) or {}).get("scene_signal", 0.0) or 0.0)) for item in attributions) / observed, 4),
+        "event_chain_strength": round(sum(float(((item.get("fine_grained", {}) or {}).get("event_chain_strength", 0.0) or 0.0)) for item in attributions) / observed, 4),
+    }
+
+
+def _track_market_rhythm_memory(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    externals = [row.get("external") for row in rows if isinstance(row, dict) and isinstance(row.get("external"), dict)]
+    if not externals:
+        return {"observed": 0, "top_percent": 0.0, "slope": 0.0, "event_rate": 0.0, "rhythm_score": 0.0}
+    observed = len(externals)
+    top_percent = sum(float(item.get("top_percent", 0.0) or 0.0) for item in externals) / observed
+    slope = sum(float(item.get("slope", 0.0) or 0.0) for item in externals) / observed
+    event_rate = sum(1.0 if item.get("event_flag") else 0.0 for item in externals) / observed
+    rhythm_score = _clamp(0.52 + max(0.0, 0.18 - top_percent / 100.0) + event_rate * 0.16 - max(0.0, slope) * 0.12)
+    return {
+        "observed": observed,
+        "top_percent": round(top_percent, 4),
+        "slope": round(slope, 4),
+        "event_rate": round(event_rate, 4),
+        "rhythm_score": round(rhythm_score, 4),
     }
 
 
@@ -136,6 +155,7 @@ def _build_multi_window_reservations(tracks: List[Dict[str, Any]], windows: int 
         monopoly_risk = float((track.get("runtime_learning", {}) or {}).get("window_wins", 0.0) or 0.0)
         episode_payoff = float((track.get("episode_learning", {}) or {}).get("payoff_signal", 0.0) or 0.0)
         coordination = float((track.get("runtime_learning", {}) or {}).get("coordination", 0.0) or 0.0)
+        market_rhythm = float((track.get("market_rhythm", {}) or {}).get("rhythm_score", 0.0) or 0.0)
         pressure = per_platform_window_counts.setdefault(platform, {})
         best_window = 0
         best_score = -999.0
@@ -145,7 +165,8 @@ def _build_multi_window_reservations(tracks: List[Dict[str, Any]], windows: int 
             payoff_bonus = episode_payoff * (0.08 if window == 0 else 0.05)
             coordination_bonus = coordination * (0.06 if window <= 1 else 0.04)
             seasonality_bonus = _seasonality_bias(platform, window)
-            window_score = adaptive_score + payoff_bonus + coordination_bonus + seasonality_bonus - occupancy_penalty - monopoly_penalty - window * 0.03
+            rhythm_bonus = market_rhythm * (0.07 if window <= 2 else 0.03)
+            window_score = adaptive_score + payoff_bonus + coordination_bonus + seasonality_bonus + rhythm_bonus - occupancy_penalty - monopoly_penalty - window * 0.03
             if window_score > best_score:
                 best_score = window_score
                 best_window = window
@@ -182,6 +203,7 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
         track_learning = dict(runtime_learning.get("track_outcomes", {}).get(os.path.basename(track_dir), DEFAULT_OUTCOME_MEMORY) or DEFAULT_OUTCOME_MEMORY)
         platform_learning = dict(runtime_learning.get("platform_outcomes", {}).get(str(platform), {}) or {})
         episode_learning = _track_episode_attribution_memory(rows)
+        market_rhythm = _track_market_rhythm_memory(rows)
         if rows:
             mean_retention = sum(float((row.get("retention", {}) or {}).get("predicted_next_episode", 0.0) or 0.0) for row in rows) / len(rows)
             mean_repetition = sum(float((row.get("scores", {}) or {}).get("repetition_score", 0.0) or 0.0) for row in rows) / len(rows)
@@ -196,7 +218,9 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
             + float(track_learning.get("retention_lift", 0.0) or 0.0) * 0.08
             + float(episode_learning.get("retention_signal", 0.0) or 0.0) * 0.08
             + float(episode_learning.get("payoff_signal", 0.0) or 0.0) * 0.07
+            + float(episode_learning.get("event_chain_strength", 0.0) or 0.0) * 0.05
             + float(platform_learning.get("success", 0.0) or 0.0) * 0.05
+            + float(market_rhythm.get("rhythm_score", 0.0) or 0.0) * 0.07
             - mean_repetition * 0.24
             - float(track_learning.get("fatigue", 0.0) or 0.0) * 0.12
             - float(episode_learning.get("fatigue_signal", 0.0) or 0.0) * 0.12
@@ -213,6 +237,7 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
                 "adaptive_score": round(adaptive_score, 4),
                 "runtime_learning": track_learning,
                 "episode_learning": episode_learning,
+                "market_rhythm": market_rhythm,
             }
         )
     tracks.sort(key=lambda item: (item["platform"], -item["adaptive_score"], -item["mean_retention"], item["fatigue"], item["track"]))
@@ -262,6 +287,7 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
                 "adaptive_score": track["adaptive_score"],
                 "runtime_learning": dict(track.get("runtime_learning", {}) or {}),
                 "episode_learning": dict(track.get("episode_learning", {}) or {}),
+                "market_rhythm": dict(track.get("market_rhythm", {}) or {}),
                 "reserved_window": reserved_window,
             }
         )

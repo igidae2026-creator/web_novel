@@ -36,9 +36,10 @@ def build_episode_attribution(
     unresolved_promises = min(1.0, float(promise_graph.get("unresolved_count", 0) or 0) / 6.0)
     fine_grained = build_scene_event_attribution(episode_text, event_plan=event_plan, cliffhanger_plan=cliffhanger_plan)
     retention_signal = _clamp(hook_score * 0.32 + unresolved_pressure * 0.22 + payoff_score * 0.16 + payoff_integrity * 0.12 + ceiling_total * 0.10 + reward_density * 0.08)
-    pacing_signal = _clamp(pacing_score * 0.56 + (1.0 - repetition) * 0.18 + expectation_alignment * 0.14 + max(0.0, 1.0 - abs(unresolved_pressure - 0.6)) * 0.12 + float(fine_grained.get("scene_signal", 0.0) or 0.0) * 0.04)
+    event_chain_strength = float(fine_grained.get("event_chain_strength", 0.0) or 0.0)
+    pacing_signal = _clamp(pacing_score * 0.56 + (1.0 - repetition) * 0.18 + expectation_alignment * 0.14 + max(0.0, 1.0 - abs(unresolved_pressure - 0.6)) * 0.12 + float(fine_grained.get("scene_signal", 0.0) or 0.0) * 0.04 + event_chain_strength * 0.03)
     fatigue_signal = _clamp(repetition * 0.48 + payoff_debt * 0.18 + unresolved_promises * 0.12 + max(0.0, reward_density - 0.75) * 0.22)
-    payoff_signal = _clamp(payoff_score * 0.46 + payoff_integrity * 0.34 + expectation_alignment * 0.12 + max(0.0, 1.0 - unresolved_promises) * 0.08 + float(fine_grained.get("scene_signal", 0.0) or 0.0) * 0.03)
+    payoff_signal = _clamp(payoff_score * 0.46 + payoff_integrity * 0.34 + expectation_alignment * 0.12 + max(0.0, 1.0 - unresolved_promises) * 0.08 + float(fine_grained.get("scene_signal", 0.0) or 0.0) * 0.03 + event_chain_strength * 0.02)
     return {
         "episode": int(episode),
         "retention_signal": round(retention_signal, 4),

@@ -383,6 +383,7 @@ def test_character_specific_promise_graph_tracks_dependencies():
     assert graph["character_promises"]
     assert any(items for items in graph["character_promises"].values())
     assert graph["dependency_edges"]
+    assert graph["weighted_dependency_graph"]
 
 
 def test_multi_objective_scores_reflect_promise_resolution_quality():
@@ -763,6 +764,8 @@ def test_fine_grained_causal_attribution_picks_top_scene():
     assert attribution["scene_count"] >= 3
     assert attribution["top_scene_index"] >= 1
     assert attribution["scene_signal"] > 0.3
+    assert attribution["event_chain_links"]
+    assert attribution["event_chain_strength"] > 0.0
 
 
 def test_episode_attribution_can_refine_release_allocator_from_logs():
@@ -907,3 +910,34 @@ def test_long_horizon_allocator_uses_seasonality_bias():
 
         assert all(0 <= window <= 5 for window in windows)
         assert min(windows) <= 1
+
+
+def test_external_market_rhythm_couples_into_release_allocation():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        fixtures = [
+            ("track_a", {"top_percent": 3.0, "slope": -0.08, "event_flag": True}),
+            ("track_b", {"top_percent": 11.0, "slope": 0.22, "event_flag": False}),
+        ]
+        for name, external in fixtures:
+            tdir = os.path.join(tracks_root, name)
+            os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+            with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+                json.dump({"project": {"platform": "Munpia", "genre_bucket": "B"}}, f)
+            with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+                for episode in range(1, 4):
+                    f.write(json.dumps({
+                        "episode": episode,
+                        "meta": {"event_plan": {"type": "arrival"}},
+                        "content_ceiling": {"ceiling_total": 74},
+                        "retention": {"predicted_next_episode": 0.72},
+                        "scores": {"repetition_score": 0.11},
+                        "external": external,
+                        "episode_attribution": {"episode": episode, "retention_signal": 0.76, "pacing_signal": 0.74, "fatigue_signal": 0.1, "payoff_signal": 0.75, "fine_grained": {"scene_signal": 0.6, "event_chain_strength": 0.42}},
+                    }) + "\n")
+        plan = build_cross_track_release_plan(tracks_root)
+        release = {item["track"]: item for item in plan["release_plan"]}
+
+        assert release["track_a"]["market_rhythm"]["rhythm_score"] > release["track_b"]["market_rhythm"]["rhythm_score"]
+        assert release["track_a"]["adaptive_score"] > release["track_b"]["adaptive_score"]

@@ -45,6 +45,7 @@ def update_promise_payoff_graph(
             "resolved_promises": [],
             "character_promises": {},
             "dependency_edges": [],
+            "weighted_dependency_graph": {},
             "payoff_corruption_flags": [],
             "unresolved_count": 0,
             "resolution_rate": 0.0,
@@ -65,6 +66,16 @@ def update_promise_payoff_graph(
     hook_score = float(score_obj.get("hook_score", 0.5) or 0.5)
     character_promises = dict(graph.get("character_promises", {}) or {})
     dependency_edges = list(graph.get("dependency_edges", []) or [])
+    weighted_graph = dict(graph.get("weighted_dependency_graph", {}) or {})
+
+    def add_weight(owner: str, target: str, weight: float, label: str) -> None:
+        key = f"{owner}->{target}"
+        current = dict(weighted_graph.get(key, {}) or {})
+        current["from"] = owner
+        current["to"] = target
+        current["weight"] = round(float(current.get("weight", 0.0) or 0.0) + weight, 4)
+        current["label"] = label
+        weighted_graph[key] = current
 
     if event_type in PROMISE_SETUP_EVENTS:
         label = _promise_label(event_type, rewards)
@@ -85,7 +96,9 @@ def update_promise_payoff_graph(
                 bucket.append({"id": f"promise-{episode}-{len(active)}", "label": label, "status": "open", "setup_episode": int(episode)})
                 character_promises[owner] = bucket[-6:]
             if len(owners) >= 2:
-                dependency_edges.append({"from": owners[0], "to": owners[1], "promise": label, "edge_type": "shared_payoff", "episode": int(episode)})
+                dependency_edges.append({"from": owners[0], "to": owners[1], "promise": label, "edge_type": "shared_payoff", "episode": int(episode), "weight": 0.34})
+                add_weight(owners[0], owners[1], 0.34, label)
+                add_weight(owners[1], owners[0], 0.22, label)
 
     if event_type in PROMISE_PAYOFF_EVENTS and active:
         target = dict(active.pop(0))
@@ -102,6 +115,10 @@ def update_promise_payoff_graph(
                     updated["payoff_episode"] = int(episode)
                 bucket.append(updated)
             character_promises[owner] = bucket[-6:]
+        owners = list(target.get("owners", []) or [])
+        if len(owners) >= 2:
+            add_weight(owners[0], owners[1], -0.08, str(target.get("label", "")))
+            add_weight(owners[1], owners[0], -0.06, str(target.get("label", "")))
 
     corruption_flags: List[Dict[str, Any]] = []
     oldest_age = max([int(episode) - int(item.get("setup_episode", episode) or episode) for item in active], default=0)
@@ -114,8 +131,9 @@ def update_promise_payoff_graph(
     resolution_rate = 0.0 if total_seen == 0 else len(resolved) / total_seen
     integrity_penalty = min(0.35, len(corruption_flags) * 0.12 + max(0, oldest_age - 2) * 0.05)
     dependency_penalty = min(0.18, sum(1 for owner, items in character_promises.items() if any(item.get("status") == "open" for item in items) and len(items) >= 3) * 0.06)
+    weighted_pressure = sum(max(0.0, float(item.get("weight", 0.0) or 0.0)) for item in weighted_graph.values())
     payoff_integrity = _clamp(0.48 + resolution_rate * 0.28 + payoff_score * 0.18 + min(0.08, len(delivered_rewards[-3:]) * 0.02) - integrity_penalty)
-    payoff_integrity = _clamp(payoff_integrity - dependency_penalty)
+    payoff_integrity = _clamp(payoff_integrity - dependency_penalty - min(0.12, weighted_pressure * 0.04))
     character_pressure = {
         owner: sum(1 for item in items if item.get("status") == "open")
         for owner, items in character_promises.items()
@@ -127,6 +145,7 @@ def update_promise_payoff_graph(
             "resolved_promises": resolved[-10:],
             "character_promises": {owner: list(items)[-6:] for owner, items in character_promises.items()},
             "dependency_edges": dependency_edges[-10:],
+            "weighted_dependency_graph": weighted_graph,
             "payoff_corruption_flags": (list(graph.get("payoff_corruption_flags", []) or []) + corruption_flags)[-8:],
             "unresolved_count": len(active),
             "resolution_rate": round(resolution_rate, 4),
@@ -160,6 +179,7 @@ def promise_graph_prompt_payload(state: Dict[str, Any]) -> Dict[str, Any]:
         "resolved_promises": graph.get("resolved_promises", [])[:4],
         "character_promises": graph.get("character_promises", {}),
         "dependency_edges": graph.get("dependency_edges", [])[:6],
+        "weighted_dependency_graph": graph.get("weighted_dependency_graph", {}),
         "unresolved_count": graph.get("unresolved_count", 0),
         "resolution_rate": graph.get("resolution_rate", 0.0),
         "payoff_integrity": graph.get("payoff_integrity", 0.0),

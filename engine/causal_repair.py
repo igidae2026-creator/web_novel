@@ -102,6 +102,9 @@ def build_causal_repair_plan(
         directives.append("직전 회차 payoff 신호가 약했으므로 이번 수정에서 감정/관계 보상을 명시하라.")
     if float(episode_attribution.get("retention_signal", 0.0) or 0.0) < 0.56:
         directives.append("직전 회차 retention 귀속이 약했으므로 장면 말미 압박과 질문을 선명하게 복구하라.")
+    fine_grained = dict(episode_attribution.get("fine_grained", {}) or {})
+    if float(fine_grained.get("scene_signal", 0.0) or 0.0) < 0.45:
+        directives.append("핵심 사건과 인과가 한 장면에 집중되도록 분산된 장면 신호를 재정렬하라.")
     directives.extend(strategy["strategy_shift"])
     repair_confidence = max(
         1,
