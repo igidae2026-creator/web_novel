@@ -13,25 +13,30 @@ def build_multi_objective_scores(
     scores: Dict[str, Any],
     retention_state: Dict[str, Any] | None = None,
     story_state: Dict[str, Any] | None = None,
+    causal_report: Dict[str, Any] | None = None,
 ) -> Dict[str, float]:
     retention_state = dict(retention_state or {})
     story_state = dict(story_state or {})
+    causal_report = dict(causal_report or {})
     world = story_state.get("world", {})
     serialization = story_state.get("serialization", {})
     rewards = story_state.get("rewards", {})
     information = story_state.get("information", {})
+    causal_score = float(causal_report.get("score", 0.6) or 0.6)
 
     objective = {
         "fun": _clamp(scores.get("hook_score", 0.5) * 0.55 + scores.get("escalation", 0.5) * 0.45),
-        "coherence": _clamp(scores.get("coherence", scores.get("logic_score", 0.55))),
-        "character_persuasiveness": _clamp(scores.get("character_score", 0.5) * 0.7 + scores.get("emotion_density", 0.5) * 0.3),
+        "coherence": _clamp(scores.get("coherence", scores.get("logic_score", 0.55)) * 0.7 + causal_score * 0.3),
+        "character_persuasiveness": _clamp(scores.get("character_score", 0.5) * 0.65 + scores.get("emotion_density", 0.5) * 0.2 + causal_report.get("checks", {}).get("goal_pressure", 0.0) * 0.15),
         "pacing": _clamp(scores.get("pacing_score", 0.5) * 0.7 + scores.get("hook_score", 0.5) * 0.3),
         "retention": _clamp(scores.get("hook_score", 0.5) * 0.3 + float(retention_state.get("curiosity_debt", 5)) / 10.0 * 0.35 + float(retention_state.get("unresolved_thread_pressure", 5)) / 10.0 * 0.35),
+        "emotional_immersion": _clamp(scores.get("emotion_density", 0.5) * 0.7 + causal_report.get("checks", {}).get("emotional_trace", 0.0) * 0.3),
+        "information_design": _clamp(float(information.get("dramatic_irony", 5)) / 10.0 * 0.45 + float(retention_state.get("information_gap", 5)) / 10.0 * 0.25 + causal_report.get("checks", {}).get("cliffhanger_alignment", 0.0) * 0.3),
         "emotional_payoff": _clamp(scores.get("emotion_density", 0.5) * 0.75 + scores.get("payoff_score", 0.5) * 0.25),
         "long_run_sustainability": _clamp(float(serialization.get("sustainability", 5)) / 10.0 * 0.7 + float(rewards.get("expectation_alignment", 5)) / 10.0 * 0.3),
-        "world_logic": _clamp(scores.get("world_logic", 0.5) * 0.6 + (10 - float(world.get("instability", 5))) / 10.0 * 0.4),
+        "world_logic": _clamp(scores.get("world_logic", 0.5) * 0.5 + (10 - float(world.get("instability", 5))) / 10.0 * 0.25 + causal_report.get("checks", {}).get("world_consequence", 0.0) * 0.25),
         "chemistry": _clamp(float(serialization.get("chemistry_signal", 5)) / 10.0 * 0.6 + scores.get("chemistry_score", 0.5) * 0.4),
-        "stability": _clamp((1.0 - scores.get("repetition_score", 0.2)) * 0.4 + float(information.get("dramatic_irony", 5)) / 10.0 * 0.15 + float(serialization.get("novelty_budget", 5)) / 10.0 * 0.15 + scores.get("coherence", scores.get("logic_score", 0.55)) * 0.3),
+        "stability": _clamp((1.0 - scores.get("repetition_score", 0.2)) * 0.35 + float(information.get("dramatic_irony", 5)) / 10.0 * 0.1 + float(serialization.get("novelty_budget", 5)) / 10.0 * 0.1 + scores.get("coherence", scores.get("logic_score", 0.55)) * 0.2 + causal_score * 0.25),
     }
     return objective
 
@@ -40,7 +45,8 @@ def multi_objective_balance(
     scores: Dict[str, Any],
     retention_state: Dict[str, Any] | None = None,
     story_state: Dict[str, Any] | None = None,
+    causal_report: Dict[str, Any] | None = None,
 ) -> float:
-    objective = build_multi_objective_scores(scores, retention_state=retention_state, story_state=story_state)
+    objective = build_multi_objective_scores(scores, retention_state=retention_state, story_state=story_state, causal_report=causal_report)
     profile = evaluate_total_profile(objective)
     return _clamp(profile["balanced_total"])

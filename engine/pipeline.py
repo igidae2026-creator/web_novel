@@ -26,6 +26,7 @@ from .reward_serialization import update_reward_serialization
 from .story_state import ensure_story_state
 from .multi_objective import build_multi_objective_scores, multi_objective_balance
 from .regression_guard import regression_decision
+from .scene_causality import validate_scene_causality
 from analytics.content_ceiling import evaluate_episode
 
 def _internal_knobs(cfg: dict, episode: int) -> dict:
@@ -298,15 +299,23 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         score_obj = {"raw": str(score_obj)}
     predicted_retention = predict_retention(score_obj, fat, state.data.get("retention_engine"))
     state.set("predicted_retention", predicted_retention)
+    causal_report = validate_scene_causality(
+        episode_text,
+        story_state=state.data.get("story_state_v2", {}),
+        event_plan=event_plan,
+        cliffhanger_plan=cliffhanger_plan,
+    )
     objective_scores = build_multi_objective_scores(
         score_obj,
         retention_state=state.data.get("retention_engine", {}),
         story_state=state.data.get("story_state_v2", {}),
+        causal_report=causal_report,
     )
     objective_balance = multi_objective_balance(
         score_obj,
         retention_state=state.data.get("retention_engine", {}),
         story_state=state.data.get("story_state_v2", {}),
+        causal_report=causal_report,
     )
     ceiling_meta = {
         "genre_bucket": pj["genre_bucket"],
@@ -319,6 +328,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "tension": state.data.get("tension_wave", {}),
         "story_state": state.data.get("story_state_v2", {}),
         "multi_objective": objective_scores,
+        "scene_causality": causal_report,
     }
     content_ceiling = evaluate_episode(episode_text, ceiling_meta)
     meta["content_ceiling"] = content_ceiling
@@ -326,6 +336,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "axes": objective_scores,
         "balance": objective_balance,
     }
+    meta["scene_causality"] = causal_report
 
     # update score history
     hist = state.get("score_history", [])
@@ -378,6 +389,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         score_obj,
         retention_state=state.data.get("retention_engine", {}),
         story_state=state.data.get("story_state_v2", {}),
+        causal_report=causal_report,
     )
     accepted, regression_report = regression_decision(objective_scores, next_objective)
     state.set("regression_report", regression_report)

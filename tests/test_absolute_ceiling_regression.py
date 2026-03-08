@@ -5,6 +5,7 @@ from engine.reward_serialization import update_reward_serialization
 from engine.multi_objective import build_multi_objective_scores
 from engine.regression_guard import regression_decision
 from engine.predictive_retention import build_retention_state, predict_retention
+from engine.scene_causality import validate_scene_causality
 
 
 def test_information_asymmetry_promotes_reveal_structure():
@@ -98,7 +99,28 @@ def test_multi_objective_scores_include_sustainability_and_world_logic():
         },
         retention_state={"unresolved_thread_pressure": 7, "curiosity_debt": 7},
         story_state=state["story_state_v2"],
+        causal_report={"score": 0.8, "checks": {"world_consequence": 1.0, "goal_pressure": 1.0, "emotional_trace": 1.0, "cliffhanger_alignment": 1.0}},
     )
 
     assert scores["long_run_sustainability"] >= 0.7
     assert scores["world_logic"] >= 0.7
+
+
+def test_scene_causality_distinguishes_linked_from_unlinked_scene():
+    state = {}
+    ensure_story_state(state, cfg={"project": {"genre_bucket": "B"}}, outline="왕좌를 되찾으려는 황자")
+    coherent = validate_scene_causality(
+        "황자는 조력자를 지키기 위해 의식을 포기했다. 그 대가로 진실이 드러났고 동맹은 흔들렸다. 결국 무너진 신뢰가 다음 선택을 더 위험하게 만들었다.",
+        story_state=state["story_state_v2"],
+        event_plan={"type": "sacrifice"},
+        cliffhanger_plan={"open_question": "누가 먼저 대가를 회수할까", "target": "동맹"},
+    )
+    incoherent = validate_scene_causality(
+        "황자는 걸었다. 하늘은 맑았다. 모두가 식사를 했다. 끝.",
+        story_state=state["story_state_v2"],
+        event_plan={"type": "sacrifice"},
+        cliffhanger_plan={"open_question": "누가 먼저 대가를 회수할까", "target": "동맹"},
+    )
+
+    assert coherent["score"] > incoherent["score"]
+    assert "causal_link" in incoherent["issues"]

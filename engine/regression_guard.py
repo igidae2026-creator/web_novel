@@ -9,6 +9,8 @@ PROTECTED_AXES = [
     "character_persuasiveness",
     "pacing",
     "retention",
+    "emotional_immersion",
+    "information_design",
     "emotional_payoff",
     "long_run_sustainability",
     "world_logic",
