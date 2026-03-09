@@ -26,6 +26,13 @@ def build_multi_objective_scores(
     pattern_memory = story_state.get("pattern_memory", {})
     market = story_state.get("market", {})
     control = story_state.get("control", {})
+    title_state = story_state.get("title", {})
+    milestones = story_state.get("milestones", {})
+    monetization = story_state.get("monetization", {})
+    protagonist_guard = story_state.get("protagonist_guard", {})
+    narrative_debt = story_state.get("narrative_debt", {})
+    emotion_wave = story_state.get("emotion_wave", {})
+    ip_readiness = story_state.get("ip_readiness", {})
     portfolio_memory = story_state.get("portfolio_memory", {})
     portfolio_metrics = story_state.get("portfolio_metrics", {})
     promise_graph = story_state.get("promise_graph", {})
@@ -37,6 +44,21 @@ def build_multi_objective_scores(
     reader_trust = float(market.get("reader_trust", 5) or 5) / 10.0
     bingeability = float(market.get("bingeability", 5) or 5) / 10.0
     release_confidence = float(market.get("release_confidence", 5) or 5) / 10.0
+    title_fitness = float((title_state.get("best_title", {}) or {}).get("title_fitness", 0.5) or 0.5)
+    milestone_readiness = float(milestones.get("milestone_readiness", 0.5) or 0.5)
+    conversion_readiness = float(monetization.get("conversion_readiness", 0.5) or 0.5)
+    protagonist_sovereignty = float(protagonist_guard.get("protagonist_sovereignty", 0.5) or 0.5)
+    protagonist_agency = float(protagonist_guard.get("protagonist_agency_score", 0.5) or 0.5)
+    secondary_takeover_risk = float(protagonist_guard.get("secondary_takeover_risk", 0.3) or 0.3)
+    reward_loop_integrity = float(protagonist_guard.get("reward_loop_integrity", 0.5) or 0.5)
+    narrative_debt_score = float(narrative_debt.get("narrative_debt_score", 0.5) or 0.5)
+    payoff_recovery_rate = float(narrative_debt.get("payoff_recovery_rate", 0.5) or 0.5)
+    expansion_friction_risk = float(narrative_debt.get("expansion_friction_risk", 0.5) or 0.5)
+    emotion_wave_balance = float(emotion_wave.get("emotion_wave_balance", 0.5) or 0.5)
+    emotion_fatigue_projection = float(emotion_wave.get("fatigue_projection", 0.5) or 0.5)
+    ip_axis = float(ip_readiness.get("ip_readiness", 0.5) or 0.5)
+    canon_consistency = float(ip_readiness.get("canon_consistency", 0.5) or 0.5)
+    franchise_expandability = float(ip_readiness.get("franchise_expandability", 0.5) or 0.5)
     repair = control.get("causal_repair", {}) or {}
     runtime_release = control.get("runtime_release", {}) or {}
     repair_confidence = float(repair.get("repair_confidence", 5) or 5) / 10.0
@@ -140,6 +162,13 @@ def build_multi_objective_scores(
         "world_logic": _clamp(base_world_logic + foresight * 0.05 + latest_scene_signal * 0.03),
         "chemistry": _clamp(float(serialization.get("chemistry_signal", 5)) / 10.0 * 0.6 + scores.get("chemistry_score", 0.5) * 0.4 + character_dependency_health * 0.06),
         "stability": _clamp(base_stability + foresight * 0.05 + market_resonance * 0.05 + exploration_bias * 0.03 + release_confidence * 0.04 + repair_confidence * 0.03 + closure_score * 0.05 + defect_resolution_score * 0.05 + strategy_coverage * 0.04 + intent_preservation_score * 0.03 + semantic_repair_effectiveness * 0.03 + portfolio_fit * 0.04 + learning_confidence * 0.05 + release_schedule_health * 0.06 + slot_policy_clarity * 0.06 + runtime_release_alignment * 0.05 + runtime_trust_signal * 0.03 + runtime_coordination_signal * 0.03 + runtime_policy_confidence * 0.02 + portfolio_coordination * 0.06 - overused_penalty - repair_penalty - semantic_failure_penalty - runtime_fatigue_signal * 0.05 - shared_risk_alert * 0.03 - max(0.0, cross_track_risk - 0.6) * 0.02 - max(0.0, pattern_crowding - 0.6) * 0.01 - max(0.0, market_overlap - 0.6) * 0.01),
+        "title_fitness": _clamp(title_fitness),
+        "milestone_compliance": _clamp(milestone_readiness * 0.72 + conversion_readiness * 0.10 + release_schedule_health * 0.08 + promise_resolution_rate * 0.10),
+        "conversion_readiness": _clamp(conversion_readiness * 0.72 + title_fitness * 0.04 + promise_resolution_rate * 0.08 + payoff_integrity * 0.08 + release_schedule_health * 0.08),
+        "protagonist_sovereignty": _clamp(protagonist_sovereignty * 0.64 + protagonist_agency * 0.16 + reward_loop_integrity * 0.20 - secondary_takeover_risk * 0.10),
+        "narrative_debt_health": _clamp((1.0 - narrative_debt_score) * 0.56 + payoff_recovery_rate * 0.22 + (1.0 - expansion_friction_risk) * 0.22),
+        "emotion_wave_health": _clamp(emotion_wave_balance * 0.66 + (1.0 - emotion_fatigue_projection) * 0.20 + release_schedule_health * 0.06 + (1.0 - runtime_fatigue_signal) * 0.08),
+        "ip_readiness": _clamp(ip_axis * 0.56 + canon_consistency * 0.20 + franchise_expandability * 0.20 + title_fitness * 0.04),
     }
     return objective
 

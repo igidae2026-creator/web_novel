@@ -33,6 +33,7 @@ from .antagonist_planner import prepare_antagonist_plan, antagonist_prompt_paylo
 from .pattern_memory import update_pattern_memory, pattern_prompt_payload
 from .market_serialization import market_prompt_payload, update_market_serialization
 from .causal_repair import (
+    assess_business_revision_closure,
     assess_causal_closure,
     build_causal_repair_plan,
     finalize_causal_repair_cycle,
@@ -44,18 +45,52 @@ from .causal_repair import (
 from .portfolio_memory import portfolio_prompt_payload, update_portfolio_memory
 from .reliability import simulate_long_run, update_system_status
 from .runtime_config import load_runtime_config_into_cfg, write_system_status_snapshot
+from .platform_genre_spec import resolve_platform_genre_spec
+from .episode_milestones import evaluate_episode_milestones
+from .monetization_transition import evaluate_monetization_transition
+from .protagonist_guard import evaluate_protagonist_guard
+from .title_optimizer import build_title_strategy
+from .narrative_debt import evaluate_narrative_debt
+from .emotion_wave import evaluate_emotion_wave
+from .ip_expansion_readiness import evaluate_ip_expansion_readiness
 from analytics.content_ceiling import evaluate_episode
 
-def _internal_knobs(cfg: dict, episode: int) -> dict:
+def _internal_knobs(cfg: dict, episode: int, platform_spec: dict | None = None) -> dict:
     nv = cfg["novel"]
+    business = dict(cfg.get("business", {}) or {})
+    platform_spec = dict(platform_spec or {})
     knobs = {"hook_intensity": 0.70, "payoff_intensity": 0.70, "compression": 0.60, "novelty_boost": 0.50}
-    if episode <= int(nv["early_focus_episodes"]):
+    early_focus = min(
+        int(nv["early_focus_episodes"]),
+        max(
+            int(platform_spec.get("first_hook_timing_target", 1) or 1),
+            int(platform_spec.get("first_reward_timing_target", 3) or 3),
+        ),
+    )
+    if episode <= early_focus:
         knobs["hook_intensity"] = 0.90
         knobs["compression"] = 0.80
-    pw0, pw1 = nv["paywall_window"]
+    pw0, pw1 = list(platform_spec.get("conversion_zone_timing_target", nv["paywall_window"]) or nv["paywall_window"])[:2]
     if int(pw0) <= episode <= int(pw1):
         knobs["payoff_intensity"] = 0.90
         knobs["compression"] = 0.75
+    if abs(int(platform_spec.get("major_payoff_timing_target", 10) or 10) - int(episode)) <= 1:
+        knobs["payoff_intensity"] = min(0.95, knobs["payoff_intensity"] + 0.08)
+        knobs["novelty_boost"] = min(0.85, knobs["novelty_boost"] + 0.08)
+    if episode >= 15 and episode % 15 == 0:
+        knobs["novelty_boost"] = min(0.90, knobs["novelty_boost"] + 0.12)
+    if 40 <= episode <= 60:
+        knobs["compression"] = max(0.55, knobs["compression"] - 0.05)
+    milestone_enforcement = float(business.get("milestone_enforcement_level", 0.5) or 0.5)
+    protagonist_focus = float(business.get("protagonist_focus_enforcement", 0.5) or 0.5)
+    ip_enforcement = float(business.get("ip_expansion_enforcement", 0.4) or 0.4)
+    recovery_mode = str(business.get("recovery_mode", "normal") or "normal")
+    knobs["payoff_intensity"] = min(0.95, knobs["payoff_intensity"] + max(0.0, milestone_enforcement - 0.5) * 0.18)
+    knobs["hook_intensity"] = min(0.95, knobs["hook_intensity"] + max(0.0, protagonist_focus - 0.5) * 0.12)
+    knobs["novelty_boost"] = min(0.90, knobs["novelty_boost"] + max(0.0, ip_enforcement - 0.4) * 0.12)
+    if recovery_mode == "soft_recovery":
+        knobs["compression"] = max(0.52, knobs["compression"] - 0.08)
+        knobs["novelty_boost"] = max(0.42, knobs["novelty_boost"] - 0.08)
     return knobs
 
 def _apply_platform_bias(cfg: dict, knobs: dict) -> dict:
@@ -192,6 +227,15 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     if not outline:
         outline = build_outline(cfg, state, llm, cost, ext)
     ensure_story_state(state.data, cfg=cfg, outline=outline)
+    platform_spec = resolve_platform_genre_spec(cfg, runtime_cfg=runtime_cfg)
+    state.data["story_state_v2"]["platform_spec"] = platform_spec
+    title_state = build_title_strategy(
+        outline=outline,
+        platform_spec=platform_spec,
+        current_title=str(cfg.get("project", {}).get("title", "") or ""),
+        runtime_release_learning=((state.data.get("story_state_v2", {}) or {}).get("portfolio_memory", {}) or {}).get("runtime_release_learning", {}),
+    )
+    state.data["story_state_v2"]["title"] = title_state
 
     sub_key = pj.get("sub_engine", "AUTO")
 
@@ -215,7 +259,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     fat_pack = fatigue_directives(fat, fat_th)
 
     # knobs
-    knobs = _internal_knobs(cfg, episode)
+    knobs = _internal_knobs(cfg, episode, platform_spec=platform_spec)
     original_knobs = knobs.copy()
     knobs = _apply_platform_bias(cfg, knobs)
     knobs = _apply_external(cfg, knobs, ext, episode)
@@ -236,8 +280,34 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     update_pattern_memory(state.data, episode=episode)
     update_market_serialization(state.data, episode=episode, cfg=cfg)
     update_portfolio_memory(state.data, cfg=cfg)
+    state.data["story_state_v2"]["title"] = build_title_strategy(
+        outline=outline,
+        platform_spec=platform_spec,
+        current_title=str(cfg.get("project", {}).get("title", "") or ""),
+        runtime_release_learning=((state.data.get("story_state_v2", {}) or {}).get("portfolio_memory", {}) or {}).get("runtime_release_learning", {}),
+    )
     event_plan = generate_event_plan(state.data, episode=episode)
     prepare_antagonist_plan(state.data, episode=episode, event_plan=event_plan)
+    state.data["story_state_v2"]["milestones"] = evaluate_episode_milestones(
+        episode=episode,
+        story_state=state.data.get("story_state_v2", {}),
+        platform_spec=platform_spec,
+        event_plan=event_plan,
+    )
+    state.data["story_state_v2"]["monetization"] = evaluate_monetization_transition(
+        episode=episode,
+        story_state=state.data.get("story_state_v2", {}),
+        platform_spec=platform_spec,
+        milestone_report=state.data["story_state_v2"]["milestones"],
+    )
+    state.data["story_state_v2"]["protagonist_guard"] = evaluate_protagonist_guard(state.data.get("story_state_v2", {}))
+    state.data["story_state_v2"]["narrative_debt"] = evaluate_narrative_debt(state.data.get("story_state_v2", {}))
+    state.data["story_state_v2"]["emotion_wave"] = evaluate_emotion_wave(state.data.get("story_state_v2", {}))
+    state.data["story_state_v2"]["ip_readiness"] = evaluate_ip_expansion_readiness(
+        episode=episode,
+        story_state=state.data.get("story_state_v2", {}),
+        title_bundle=state.data["story_state_v2"]["title"],
+    )
     prepare_information_emotion(state.data, episode=episode, event_plan=event_plan)
     cliffhanger_plan = generate_cliffhanger_plan(
         character_prompt_payload(state.data),
@@ -258,6 +328,14 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "pattern_memory": pattern_prompt_payload(state.data),
         "market": market_prompt_payload(state.data),
         "portfolio": portfolio_prompt_payload(state.data),
+        "platform_spec": state.data.get("story_state_v2", {}).get("platform_spec", {}),
+        "title": state.data.get("story_state_v2", {}).get("title", {}),
+        "milestones": state.data.get("story_state_v2", {}).get("milestones", {}),
+        "monetization": state.data.get("story_state_v2", {}).get("monetization", {}),
+        "protagonist_guard": state.data.get("story_state_v2", {}).get("protagonist_guard", {}),
+        "narrative_debt": state.data.get("story_state_v2", {}).get("narrative_debt", {}),
+        "emotion_wave": state.data.get("story_state_v2", {}).get("emotion_wave", {}),
+        "ip_readiness": state.data.get("story_state_v2", {}).get("ip_readiness", {}),
     }
 
     snap = ext.latest(pj["platform"], pj["genre_bucket"]) or {}
@@ -387,9 +465,106 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         story_state=state.data.get("story_state_v2", {}),
         event_plan=event_plan,
         cliffhanger_plan=cliffhanger_plan,
+        objective_scores=objective_scores,
+        episode=episode,
     )
+    business_budget = max(0, min(2, int(cfg["limits"].get("causal_repair_retry_budget", repair_budget) or repair_budget) - int(state.data.get("story_state_v2", {}).get("control", {}).get("causal_repair", {}).get("attempts_used", 0) or 0)))
+    business_closure = assess_business_revision_closure(repair_plan)
+    if business_budget > 0 and business_closure["blocking_axes"]:
+        state.data.get("story_state_v2", {}).get("control", {}).get("causal_repair", {})["revision_triggers"] = list(business_closure["blocking_axes"])
+    for business_attempt in range(1, business_budget + 1):
+        if not business_closure["blocking_axes"]:
+            break
+        pre_rewrite_text = str(cur_obj.get("episode_text", ""))
+        pre_rewrite_report = dict(causal_report or {})
+        rewrite_prompt = PROMPTS.episode_rewrite_json(
+            cfg, cur_obj, episode, knobs, style, sub_key, viral_required, story_state=story_state, repair_plan=repair_plan
+        )
+        rewrite_resp = llm.call(rewrite_prompt, temperature=0.45)
+        cost.add_usage(rewrite_resp)
+        ok4, obj4 = parse_json_strict(rewrite_resp.output_text)
+        if ok4 and isinstance(obj4, dict):
+            cur_obj = obj4
+        episode_text = str(cur_obj.get("episode_text", "")).strip()
+        meta = enforce_cliffhanger(
+            {
+                "quote_line": str(cur_obj.get("quote_line", "")).strip(),
+                "comment_hook": str(cur_obj.get("comment_hook", "")).strip(),
+                "cliffhanger": str(cur_obj.get("cliffhanger", "")).strip(),
+                "event_plan": event_plan,
+                "cliffhanger_plan": cliffhanger_plan,
+            },
+            cliffhanger_plan,
+        )
+        sc_resp = llm.call(PROMPTS.scoring_json(cfg, episode_text, episode), temperature=0.2)
+        cost.add_usage(sc_resp)
+        ok_sc, rescored = parse_json_strict(sc_resp.output_text)
+        if ok_sc and isinstance(rescored, dict):
+            score_obj = rescored
+        predicted_retention = predict_retention(score_obj, fat, state.data.get("retention_engine"))
+        state.set("predicted_retention", predicted_retention)
+        causal_report = validate_scene_causality(
+            episode_text,
+            story_state=state.data.get("story_state_v2", {}),
+            event_plan=event_plan,
+            cliffhanger_plan=cliffhanger_plan,
+        )
+        objective_scores = build_multi_objective_scores(
+            score_obj,
+            retention_state=state.data.get("retention_engine", {}),
+            story_state=state.data.get("story_state_v2", {}),
+            causal_report=causal_report,
+        )
+        repair_plan = build_causal_repair_plan(
+            causal_report,
+            story_state=state.data.get("story_state_v2", {}),
+            event_plan=event_plan,
+            cliffhanger_plan=cliffhanger_plan,
+            objective_scores=objective_scores,
+            episode=episode,
+        )
+        record_causal_repair_attempt(
+            state.data,
+            attempt_index=int(state.data.get("story_state_v2", {}).get("control", {}).get("causal_repair", {}).get("attempts_used", 0) or 0) + business_attempt,
+            causal_report=causal_report,
+            repair_plan=repair_plan,
+        )
+        record_repair_diff_audit(
+            state.data,
+            attempt_index=int(state.data.get("story_state_v2", {}).get("control", {}).get("causal_repair", {}).get("attempts_used", 0) or 0),
+            pre_text=pre_rewrite_text,
+            post_text=episode_text,
+            pre_report=pre_rewrite_report,
+            post_report=causal_report,
+            repair_plan=repair_plan,
+        )
+        business_closure = assess_business_revision_closure(repair_plan)
     finalize_causal_repair_cycle(state.data, causal_report=causal_report, repair_plan=repair_plan)
     store_causal_repair_plan(state.data, repair_plan)
+    state.data["story_state_v2"]["milestones"] = evaluate_episode_milestones(
+        episode=episode,
+        story_state=state.data.get("story_state_v2", {}),
+        platform_spec=platform_spec,
+        event_plan=event_plan,
+        score_obj=score_obj,
+    )
+    state.data["story_state_v2"]["monetization"] = evaluate_monetization_transition(
+        episode=episode,
+        story_state=state.data.get("story_state_v2", {}),
+        platform_spec=platform_spec,
+        milestone_report=state.data["story_state_v2"]["milestones"],
+    )
+    state.data["story_state_v2"]["protagonist_guard"] = evaluate_protagonist_guard(
+        state.data.get("story_state_v2", {}),
+        score_obj=score_obj,
+    )
+    state.data["story_state_v2"]["narrative_debt"] = evaluate_narrative_debt(state.data.get("story_state_v2", {}))
+    state.data["story_state_v2"]["emotion_wave"] = evaluate_emotion_wave(state.data.get("story_state_v2", {}))
+    state.data["story_state_v2"]["ip_readiness"] = evaluate_ip_expansion_readiness(
+        episode=episode,
+        story_state=state.data.get("story_state_v2", {}),
+        title_bundle=state.data["story_state_v2"]["title"],
+    )
     objective_scores = build_multi_objective_scores(
         score_obj,
         retention_state=state.data.get("retention_engine", {}),
@@ -414,6 +589,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "story_state": state.data.get("story_state_v2", {}),
         "multi_objective": objective_scores,
         "scene_causality": causal_report,
+        "platform_spec": platform_spec,
     }
     content_ceiling = evaluate_episode(episode_text, ceiling_meta)
     episode_attribution = record_episode_attribution(
@@ -437,6 +613,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         episode=episode,
         objective_scores=objective_scores,
         portfolio_signals=state.data.get("story_state_v2", {}).get("portfolio_memory", {}),
+        runtime_cfg=runtime_cfg,
     )
     write_system_status_snapshot(
         system_status,
@@ -451,6 +628,13 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     meta["system_status"] = system_status
     meta["simulation"] = simulation
     meta["runtime_config"] = runtime_cfg
+    meta["title"] = state.data.get("story_state_v2", {}).get("title", {})
+    meta["milestones"] = state.data.get("story_state_v2", {}).get("milestones", {})
+    meta["monetization"] = state.data.get("story_state_v2", {}).get("monetization", {})
+    meta["protagonist_guard"] = state.data.get("story_state_v2", {}).get("protagonist_guard", {})
+    meta["narrative_debt"] = state.data.get("story_state_v2", {}).get("narrative_debt", {})
+    meta["emotion_wave"] = state.data.get("story_state_v2", {}).get("emotion_wave", {})
+    meta["ip_readiness"] = state.data.get("story_state_v2", {}).get("ip_readiness", {})
 
     # update score history
     hist = state.get("score_history", [])
@@ -474,6 +658,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "episode": episode,
         "platform": pj["platform"],
         "genre_bucket": pj["genre_bucket"],
+        "title": state.data.get("story_state_v2", {}).get("title", {}).get("best_title", {}),
         "sub_engine": pick_subengine(pj["genre_bucket"], sub_key).key,
         "knobs": knobs,
         "external": snap,
@@ -507,6 +692,36 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     update_pattern_memory(state.data, episode=episode, event_plan=event_plan, cliffhanger_plan=cliffhanger_plan)
     update_market_serialization(state.data, episode=episode, cfg=cfg, event_plan=event_plan)
     update_portfolio_memory(state.data, cfg=cfg, event_plan=event_plan)
+    state.data["story_state_v2"]["title"] = build_title_strategy(
+        outline=outline,
+        platform_spec=platform_spec,
+        current_title=str(cfg.get("project", {}).get("title", "") or ""),
+        runtime_release_learning=((state.data.get("story_state_v2", {}) or {}).get("portfolio_memory", {}) or {}).get("runtime_release_learning", {}),
+    )
+    state.data["story_state_v2"]["milestones"] = evaluate_episode_milestones(
+        episode=episode,
+        story_state=state.data.get("story_state_v2", {}),
+        platform_spec=platform_spec,
+        event_plan=event_plan,
+        score_obj=score_obj,
+    )
+    state.data["story_state_v2"]["monetization"] = evaluate_monetization_transition(
+        episode=episode,
+        story_state=state.data.get("story_state_v2", {}),
+        platform_spec=platform_spec,
+        milestone_report=state.data["story_state_v2"]["milestones"],
+    )
+    state.data["story_state_v2"]["protagonist_guard"] = evaluate_protagonist_guard(
+        state.data.get("story_state_v2", {}),
+        score_obj=score_obj,
+    )
+    state.data["story_state_v2"]["narrative_debt"] = evaluate_narrative_debt(state.data.get("story_state_v2", {}))
+    state.data["story_state_v2"]["emotion_wave"] = evaluate_emotion_wave(state.data.get("story_state_v2", {}))
+    state.data["story_state_v2"]["ip_readiness"] = evaluate_ip_expansion_readiness(
+        episode=episode,
+        story_state=state.data.get("story_state_v2", {}),
+        title_bundle=state.data["story_state_v2"]["title"],
+    )
     next_objective = build_multi_objective_scores(
         score_obj,
         retention_state=state.data.get("retention_engine", {}),

@@ -28,6 +28,44 @@ ISSUE_STRATEGIES = {
     "emotional_trace": {"strategy": "embodied_emotion", "shift": "감정을 감각, 몸 반응, 후회 흔적으로 남긴다."},
 }
 
+BUSINESS_AXIS_RULES = {
+    "title_fitness": {
+        "threshold": 0.62,
+        "blocking": False,
+        "directive": "제목이 약속하는 장르/보상 신호가 첫 장면과 핵심 갈등에서 즉시 읽히도록 정리하라.",
+    },
+    "milestone_compliance": {
+        "threshold": 0.64,
+        "blocking": True,
+        "directive": "현재 회차 구간에 필요한 마일스톤 보상 또는 구조 전환을 장면 안에 명시하라.",
+    },
+    "conversion_readiness": {
+        "threshold": 0.64,
+        "blocking": True,
+        "directive": "유료 전환 압박이 약하므로 끝부분의 미스터리, 보상 직전 긴장, 사회적 인정 욕구를 강화하라.",
+    },
+    "protagonist_sovereignty": {
+        "threshold": 0.66,
+        "blocking": True,
+        "directive": "주인공이 반응만 하지 말고 선택, 비용, 보상의 중심에서 판을 직접 움직이게 고쳐라.",
+    },
+    "narrative_debt_health": {
+        "threshold": 0.58,
+        "blocking": True,
+        "directive": "새 떡밥 추가를 줄이고 기존 약속 하나를 회수하거나 비용을 정산해 장기 부채를 낮춰라.",
+    },
+    "emotion_wave_health": {
+        "threshold": 0.58,
+        "blocking": True,
+        "directive": "고강도만 누적하지 말고 호흡, 여운, 감정 회복 구간을 넣어 파형을 정상화하라.",
+    },
+    "ip_readiness": {
+        "threshold": 0.55,
+        "blocking": False,
+        "directive": "장면 전환, 시각적 후킹, 규칙/세력 명료도를 높여 향후 적응 가능성을 확보하라.",
+    },
+}
+
 
 def _priority(issue: str) -> int:
     if issue in {"causal_link", "goal_pressure", "cost_payment"}:
@@ -76,11 +114,62 @@ def _repair_strategy_bundle(
     }
 
 
+def build_business_axis_repair_plan(
+    objective_scores: Dict[str, Any] | None,
+    story_state: Dict[str, Any] | None,
+    episode: int | None = None,
+) -> Dict[str, Any]:
+    objective_scores = dict(objective_scores or {})
+    story_state = dict(story_state or {})
+    title_state = dict(story_state.get("title", {}) or {})
+    monetization = dict(story_state.get("monetization", {}) or {})
+    failed_axes = []
+    directives = []
+    for axis, rule in BUSINESS_AXIS_RULES.items():
+        value = float(objective_scores.get(axis, 0.0) or 0.0)
+        threshold = float(rule["threshold"])
+        blocking = bool(rule["blocking"])
+        if axis == "conversion_readiness" and episode is not None:
+            if int(episode) < 10:
+                blocking = False
+        if axis == "ip_readiness" and episode is not None:
+            blocking = blocking and int(episode) >= 100
+        if value >= threshold:
+            continue
+        severity = round(min(1.0, threshold - value), 4)
+        entry = {
+            "axis": axis,
+            "value": round(value, 4),
+            "threshold": threshold,
+            "severity": severity,
+            "blocking": blocking,
+            "directive": rule["directive"],
+        }
+        if axis == "title_fitness":
+            best_title = dict(title_state.get("best_title", {}) or {})
+            if best_title.get("candidate"):
+                entry["recommended_title"] = best_title.get("candidate")
+                entry["directive"] = f"{rule['directive']} 추천 제목 후보: {best_title.get('candidate')}."
+        if axis == "conversion_readiness":
+            missing = list(monetization.get("missing_conversion_signals", []) or [])
+            if missing:
+                entry["missing_signals"] = missing[:3]
+        failed_axes.append(entry)
+        directives.append(entry["directive"])
+    return {
+        "business_axis_failures": failed_axes,
+        "business_directives": directives[:5],
+        "blocking_business_failures": [item for item in failed_axes if item["blocking"]],
+    }
+
+
 def build_causal_repair_plan(
     causal_report: Dict[str, Any],
     story_state: Dict[str, Any] | None = None,
     event_plan: Dict[str, Any] | None = None,
     cliffhanger_plan: Dict[str, Any] | None = None,
+    objective_scores: Dict[str, Any] | None = None,
+    episode: int | None = None,
 ) -> Dict[str, Any]:
     causal_report = dict(causal_report or {})
     story_state = dict(story_state or {})
@@ -91,6 +180,7 @@ def build_causal_repair_plan(
     episode_attribution = ((story_state.get("control", {}) or {}).get("episode_attribution", {}) or {}).get("latest", {}) or {}
     previous_history = list(repair_state.get("history", []) or [])
     strategy_effectiveness = dict(repair_state.get("strategy_effectiveness", {}) or {})
+    business_plan = build_business_axis_repair_plan(objective_scores, story_state, episode=episode)
 
     issues = list(causal_report.get("issues", []) or [])
     critical = sorted([issue for issue in issues if _priority(issue) >= 2], key=_priority, reverse=True)
@@ -106,6 +196,7 @@ def build_causal_repair_plan(
     if float(fine_grained.get("scene_signal", 0.0) or 0.0) < 0.45:
         directives.append("핵심 사건과 인과가 한 장면에 집중되도록 분산된 장면 신호를 재정렬하라.")
     directives.extend(strategy["strategy_shift"])
+    directives.extend(list(business_plan.get("business_directives", []) or []))
     repair_confidence = max(
         1,
         min(
@@ -128,6 +219,9 @@ def build_causal_repair_plan(
         "strategy_coverage": strategy["strategy_coverage"],
         "failed_strategies": strategy["failed_strategies"],
         "next_strategy_shift": strategy["strategy_shift"][0] if strategy["strategy_shift"] else "",
+        "business_axis_failures": list(business_plan.get("business_axis_failures", []) or []),
+        "business_directives": list(business_plan.get("business_directives", []) or []),
+        "revision_triggers": [item.get("axis") for item in list(business_plan.get("blocking_business_failures", []) or [])],
     }
 
 
@@ -149,6 +243,17 @@ def assess_causal_closure(
         "closure_score": closure_score,
         "unresolved_issues": issues,
         "unresolved_critical": unresolved_critical,
+    }
+
+
+def assess_business_revision_closure(repair_plan: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    repair_plan = dict(repair_plan or {})
+    blocking = list(repair_plan.get("business_axis_failures", []) or [])
+    blocking = [item for item in blocking if item.get("blocking")]
+    return {
+        "passed": len(blocking) == 0,
+        "blocking_axes": [item.get("axis") for item in blocking],
+        "blocking_failures": blocking,
     }
 
 
@@ -201,6 +306,9 @@ def start_causal_repair_cycle(
                 "semantic_repair_effectiveness": 0.0,
             },
             "history": [],
+            "business_axis_failures": list(repair_plan.get("business_axis_failures", []) or []),
+            "business_directives": list(repair_plan.get("business_directives", []) or []),
+            "revision_triggers": list(repair_plan.get("revision_triggers", []) or []),
         }
     )
     state["story_state_v2"] = story_state
@@ -226,6 +334,8 @@ def record_causal_repair_attempt(
             "passed": bool(status["passed"]),
             "directives": list(repair_plan.get("directives", []) or [])[:3],
             "strategy_key": str(repair_plan.get("strategy_key", "baseline") or "baseline"),
+            "business_axis_failures": list(repair_plan.get("business_axis_failures", []) or []),
+            "revision_triggers": list(repair_plan.get("revision_triggers", []) or []),
         }
     )
     control.update(
@@ -241,6 +351,9 @@ def record_causal_repair_attempt(
             "failed_strategies": list(repair_plan.get("failed_strategies", []) or [])[:3],
             "next_strategy_shift": str(repair_plan.get("next_strategy_shift", "") or ""),
             "history": history[-6:],
+            "business_axis_failures": list(repair_plan.get("business_axis_failures", []) or []),
+            "business_directives": list(repair_plan.get("business_directives", []) or []),
+            "revision_triggers": list(repair_plan.get("revision_triggers", []) or []),
         }
     )
     state["story_state_v2"] = story_state
@@ -316,6 +429,9 @@ def finalize_causal_repair_cycle(
             "next_strategy_shift": str(repair_plan.get("next_strategy_shift", control.get("next_strategy_shift", "")) or ""),
             "defect_resolution_score": max(float(control.get("defect_resolution_score", 0.0) or 0.0), float(status["closure_score"])),
             "semantic_audit": dict(control.get("semantic_audit", {}) or {}),
+            "business_axis_failures": list(repair_plan.get("business_axis_failures", control.get("business_axis_failures", [])) or []),
+            "business_directives": list(repair_plan.get("business_directives", control.get("business_directives", [])) or []),
+            "revision_triggers": list(repair_plan.get("revision_triggers", control.get("revision_triggers", [])) or []),
         }
     )
     state["story_state_v2"] = story_state
@@ -343,6 +459,9 @@ def store_causal_repair_plan(state: Dict[str, Any], repair_plan: Dict[str, Any])
         "diff_audit": dict(prev.get("diff_audit", {}) or {}),
         "semantic_audit": dict(prev.get("semantic_audit", {}) or {}),
         "history": list(prev.get("history", []) or [])[-6:],
+        "business_axis_failures": list(repair_plan.get("business_axis_failures", prev.get("business_axis_failures", [])) or []),
+        "business_directives": list(repair_plan.get("business_directives", prev.get("business_directives", [])) or []),
+        "revision_triggers": list(repair_plan.get("revision_triggers", prev.get("revision_triggers", [])) or []),
     }
     state["story_state_v2"] = story_state
     sync_story_state(state)

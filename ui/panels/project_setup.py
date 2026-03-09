@@ -3,7 +3,7 @@ import streamlit as st
 from engine.control_console import GENRE_PRESETS, PLATFORM_PRESETS, PROJECT_PRESETS
 
 
-def render(lang: str, project_setup: dict, presets: dict, visible_fields: set[str]):
+def render(lang: str, project_setup: dict, presets: dict, visible_fields: set[str], studio_os: dict | None = None):
     st.subheader("프로젝트 설정" if lang == "ko" else "Project Setup")
     st.selectbox("프로젝트 프리셋" if lang == "ko" else "Project preset", list(PROJECT_PRESETS.keys()), key="project_preset", index=list(PROJECT_PRESETS.keys()).index(str(presets.get("project", "Steady Series"))))
     st.selectbox("플랫폼 프리셋" if lang == "ko" else "Platform preset", list(PLATFORM_PRESETS.keys()), key="platform_preset", index=list(PLATFORM_PRESETS.keys()).index(str(presets.get("platform", "Munpia Standard"))))
@@ -12,6 +12,17 @@ def render(lang: str, project_setup: dict, presets: dict, visible_fields: set[st
     c1.text_input("프로젝트 이름" if lang == "ko" else "Project name", key="project_name", value=str(project_setup.get("name", "METAOS_Project")))
     c2.selectbox("플랫폼" if lang == "ko" else "Platform", ["Joara", "Munpia", "NaverSeries", "KakaoPage", "Ridibooks", "Novelpia"], key="platform_name", index=["Joara", "Munpia", "NaverSeries", "KakaoPage", "Ridibooks", "Novelpia"].index(str(project_setup.get("platform", "Munpia"))))
     c3.selectbox("장르 버킷" if lang == "ko" else "Genre bucket", list(GENRE_PRESETS.keys()), key="genre_bucket", index=list(GENRE_PRESETS.keys()).index(str(project_setup.get("genre_bucket", "A"))))
+    st.text_input("작품 제목" if lang == "ko" else "Project title", key="project_title", value=str(project_setup.get("title", "")))
+    title_state = dict((studio_os or {}).get("latest_title_state", {}) or {})
+    if title_state:
+        st.caption("현재 추천 제목" if lang == "ko" else "Current recommended title")
+        st.json(
+            {
+                "selected_title": title_state.get("selected_title"),
+                "rationale": title_state.get("selected_title_rationale", []),
+                "launch_recommendation": title_state.get("launch_recommendation", {}),
+            }
+        )
     if "sub_engine" in visible_fields:
         st.text_input("서브 엔진" if lang == "ko" else "Sub-engine", key="sub_engine", value=str(project_setup.get("sub_engine", "AUTO")))
     if "target_total_episodes" in visible_fields:

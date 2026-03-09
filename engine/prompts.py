@@ -68,6 +68,7 @@ class PROMPTS:
 
         return f"""한국 웹소설 장편(연재) 아웃라인을 작성하라.
 
+현재 작업 제목: {pj.get('title', '') or '미정'}
 플랫폼: {pj['platform']}
 장르 버킷: {bucket}
 세부 엔진: {sub.label} ({sub.key}) — {sub.brief}
@@ -108,6 +109,7 @@ class PROMPTS:
         sub = pick_subengine(bucket, sub_engine_key)
         return f"""에피소드 {ep}/{nv['total_episodes']}의 씬 플랜을 작성하라.
 
+현재 작업 제목: {pj.get('title', '') or '미정'}
 플랫폼: {pj['platform']} (페이싱 {plat.get('pacing','balanced')})
 장르: {bucket} / 세부 엔진: {sub.label} ({sub.key})
 
@@ -140,6 +142,30 @@ class PROMPTS:
 
 시장/연재 상태:
 {(story_state or {}).get('market', {})}
+
+플랫폼/장르 규격:
+{(story_state or {}).get('platform_spec', {})}
+
+타이틀 상태:
+{(story_state or {}).get('title', {})}
+
+에피소드 마일스톤:
+{(story_state or {}).get('milestones', {})}
+
+유료 전환 상태:
+{(story_state or {}).get('monetization', {})}
+
+주인공 주권 가드:
+{(story_state or {}).get('protagonist_guard', {})}
+
+내러티브 부채:
+{(story_state or {}).get('narrative_debt', {})}
+
+감정 파형:
+{(story_state or {}).get('emotion_wave', {})}
+
+IP 확장 준비도:
+{(story_state or {}).get('ip_readiness', {})}
 
 포트폴리오 메모리:
 {(story_state or {}).get('portfolio', {})}
@@ -179,6 +205,7 @@ class PROMPTS:
         return f"""한국 웹소설 본문을 작성하라.
 
 에피소드: {ep}
+현재 작업 제목: {pj.get('title', '') or '미정'}
 플랫폼: {pj['platform']} / 장르: {bucket} / 세부 엔진: {sub.label} ({sub.key})
 페이싱: {plat.get('pacing','balanced')}
 
@@ -232,6 +259,7 @@ class PROMPTS:
 - 바이럴 요소(quote_line/comment_hook/cliffhanger) 유지 또는 강화
 - 인과 보수 지시가 있으면 우선 반영
 
+현재 작업 제목: {pj.get('title', '') or '미정'}
 플랫폼: {pj['platform']} / 장르: {bucket} / 엔진: {sub.label}
 페이싱: {plat.get('pacing','balanced')}
 노브(knobs):
@@ -242,6 +270,9 @@ class PROMPTS:
 
 인과 보수 지시:
 {repair_plan or {}}
+
+비즈니스 축 보수 지시:
+{(repair_plan or {}).get('business_directives', []) if isinstance(repair_plan, dict) else []}
 
 문체/리듬 제약:
 {constraints_text(style)}\n자료 기반 제약(있으면 반영):\n{profile_constraints_text(knobs.get('profile'))}

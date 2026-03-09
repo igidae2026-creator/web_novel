@@ -5,11 +5,12 @@ from engine.control_console import (
     build_error_warning_panel,
     build_history_trends,
     build_home_dashboard,
+    build_studio_os_dashboard,
     get_console_mode_fields,
     initialize_console_state,
 )
 from engine.runtime_config import DEFAULT_RUNTIME_CONFIG_PATH, read_json_file
-from .panels import dashboard, generation_control, outputs_viewer, project_setup, quality_reliability, release_scheduler, track_portfolio
+from .panels import dashboard, generation_control, outputs_viewer, project_setup, quality_reliability, release_scheduler, studio_os_dashboard, track_portfolio
 from .panels.shared import (
     build_runtime_payload,
     initialize_session_state,
@@ -52,6 +53,7 @@ def main():
     policy_action_payload = load_policy_action(paths["policy_action_path"])
     review_items = build_episode_review_items(paths["tracks_root"], limit=8)
     dashboard_data = build_home_dashboard(persisted_runtime, system_status_payload, policy_action_payload)
+    studio_os_data = build_studio_os_dashboard(system_status_payload, persisted_runtime)
     error_panel = build_error_warning_panel(system_status_payload, policy_action_payload)
     history = build_history_trends(system_status_payload, policy_action_payload)
     visible_fields = set(get_console_mode_fields(console_mode))
@@ -100,6 +102,7 @@ def main():
         [
             t("dashboard", lang),
             t("project_setup", lang),
+            t("studio_os", lang),
             t("generation", lang),
             t("portfolio", lang),
             t("release", lang),
@@ -111,10 +114,18 @@ def main():
     with tabs[0]:
         dashboard.render(lang, dashboard_data, error_panel)
     with tabs[1]:
-        project_setup.render(lang, dict(persisted_runtime.get("project_setup", {}) or {}), dict(persisted_runtime.get("presets", {}) or {}), visible_fields)
+        project_setup.render(lang, dict(persisted_runtime.get("project_setup", {}) or {}), dict(persisted_runtime.get("presets", {}) or {}), visible_fields, studio_os=studio_os_data)
     with tabs[2]:
-        generation_control.render(lang, persisted_runtime, dict(persisted_runtime.get("evaluation", {}) or {}), visible_fields)
+        studio_os_dashboard.render(
+            lang,
+            studio_os_data,
+            visible_fields,
+            lambda action, payload, loop_active, extra=None: request_or_execute_action(action, payload, loop_active, paths["policy_action_path"], extra),
+            build_runtime_payload(persisted_runtime),
+        )
     with tabs[3]:
+        generation_control.render(lang, persisted_runtime, dict(persisted_runtime.get("evaluation", {}) or {}), visible_fields)
+    with tabs[4]:
         track_portfolio.render(
             lang,
             paths,
@@ -122,11 +133,11 @@ def main():
             lambda action, payload, loop_active, extra=None: request_or_execute_action(action, payload, loop_active, paths["policy_action_path"], extra),
             build_runtime_payload(persisted_runtime),
         )
-    with tabs[4]:
-        release_scheduler.render(lang, dict(persisted_runtime.get("release_cadence", {}) or {}), dict(persisted_runtime.get("release_scheduler", {}) or {}), visible_fields)
     with tabs[5]:
-        quality_reliability.render(lang, dict(persisted_runtime.get("reliability", {}) or {}), history, visible_fields)
+        release_scheduler.render(lang, dict(persisted_runtime.get("release_cadence", {}) or {}), dict(persisted_runtime.get("release_scheduler", {}) or {}), visible_fields)
     with tabs[6]:
+        quality_reliability.render(lang, dict(persisted_runtime.get("reliability", {}) or {}), history, visible_fields)
+    with tabs[7]:
         outputs_viewer.render(
             lang,
             policy_action_payload,

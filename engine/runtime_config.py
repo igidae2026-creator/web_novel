@@ -25,11 +25,13 @@ DEFAULT_RUNTIME_CONFIG: Dict[str, Any] = {
     },
     "project_setup": {
         "name": "METAOS_Project",
+        "title": "",
         "platform": "Munpia",
         "genre_bucket": "A",
         "sub_engine": "AUTO",
         "target_total_episodes": 300,
         "early_focus_episodes": 3,
+        "platform_genre_overrides": {},
     },
     "generation_enabled": True,
     "track_count": 6,
@@ -52,6 +54,12 @@ DEFAULT_RUNTIME_CONFIG: Dict[str, Any] = {
         "max_revision_passes": 2,
         "causal_repair_retry_budget": 2,
         "viral_required": True,
+        "milestone_enforcement_level": 0.5,
+        "protagonist_focus_enforcement": 0.5,
+        "ip_expansion_enforcement": 0.4,
+    },
+    "business": {
+        "recovery_mode": "normal",
     },
     "reliability": {
         "simulation_horizons": [30, 60, 120],
@@ -61,6 +69,11 @@ DEFAULT_RUNTIME_CONFIG: Dict[str, Any] = {
         "held_tracks": [],
         "boosted_tracks": [],
         "ignored_recommendations": [],
+    },
+    "business_control": {
+        "adjustment_history": [],
+        "pending_adjustments": [],
+        "learning": {},
     },
     "review_state": {
         "review_queue": [],
@@ -75,11 +88,13 @@ DEFAULT_RUNTIME_CONFIG: Dict[str, Any] = {
         "METAOS_Project": {
             "project_setup": {
                 "name": "METAOS_Project",
+                "title": "",
                 "platform": "Munpia",
                 "genre_bucket": "A",
                 "sub_engine": "AUTO",
                 "target_total_episodes": 300,
                 "early_focus_episodes": 3,
+                "platform_genre_overrides": {},
             },
             "paths": {
                 "tracks_root": os.path.join("domains", "webnovel", "projects", "metaos_project", "tracks"),
@@ -176,6 +191,8 @@ def apply_runtime_config(cfg: Dict[str, Any], runtime_cfg: Dict[str, Any] | None
         override.setdefault("novel", {})
         if project_setup.get("name"):
             override["project"]["name"] = str(project_setup["name"])
+        if project_setup.get("title") is not None:
+            override["project"]["title"] = str(project_setup.get("title", "") or "")
         if project_setup.get("platform"):
             override["project"]["platform"] = str(project_setup["platform"])
         if project_setup.get("genre_bucket"):
@@ -186,6 +203,8 @@ def apply_runtime_config(cfg: Dict[str, Any], runtime_cfg: Dict[str, Any] | None
             override["novel"]["total_episodes"] = int(project_setup["target_total_episodes"])
         if project_setup.get("early_focus_episodes") is not None:
             override["novel"]["early_focus_episodes"] = int(project_setup["early_focus_episodes"])
+        if project_setup.get("platform_genre_overrides") is not None:
+            override["project"]["platform_genre_overrides"] = dict(project_setup.get("platform_genre_overrides", {}) or {})
     portfolio_cfg = dict(runtime_cfg.get("portfolio", {}) or {})
     if portfolio_cfg:
         override["portfolio"] = portfolio_cfg
@@ -193,12 +212,24 @@ def apply_runtime_config(cfg: Dict[str, Any], runtime_cfg: Dict[str, Any] | None
     if evaluation_cfg:
         override.setdefault("limits", {})
         override.setdefault("quality", {})
+        override.setdefault("business", {})
         if evaluation_cfg.get("max_revision_passes") is not None:
             override["limits"]["max_revision_passes"] = int(evaluation_cfg["max_revision_passes"])
         if evaluation_cfg.get("causal_repair_retry_budget") is not None:
             override["limits"]["causal_repair_retry_budget"] = int(evaluation_cfg["causal_repair_retry_budget"])
         if evaluation_cfg.get("viral_required") is not None:
             override["quality"]["viral_required"] = bool(evaluation_cfg["viral_required"])
+        if evaluation_cfg.get("milestone_enforcement_level") is not None:
+            override["business"]["milestone_enforcement_level"] = float(evaluation_cfg["milestone_enforcement_level"])
+        if evaluation_cfg.get("protagonist_focus_enforcement") is not None:
+            override["business"]["protagonist_focus_enforcement"] = float(evaluation_cfg["protagonist_focus_enforcement"])
+        if evaluation_cfg.get("ip_expansion_enforcement") is not None:
+            override["business"]["ip_expansion_enforcement"] = float(evaluation_cfg["ip_expansion_enforcement"])
+    business_cfg = dict(runtime_cfg.get("business", {}) or {})
+    if business_cfg:
+        override.setdefault("business", {})
+        if business_cfg.get("recovery_mode") is not None:
+            override["business"]["recovery_mode"] = str(business_cfg.get("recovery_mode", "normal"))
     return deep_merge(cfg, override)
 
 

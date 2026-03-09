@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, List
 
+from .business_operator import build_business_action_recommendations
 from .regression_guard import PROTECTED_AXES, evaluate_total_profile
 from .story_state import ensure_story_state, sync_story_state
 
@@ -71,6 +72,7 @@ def update_system_status(
     episode: int,
     objective_scores: Dict[str, Any],
     portfolio_signals: Dict[str, Any] | None = None,
+    runtime_cfg: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     story_state = ensure_story_state(state)
     control = story_state.setdefault("control", {})
@@ -117,12 +119,42 @@ def update_system_status(
         warnings.append({"episode": int(episode), "type": "quality_drift", "drop": drift.get("drop", 0.0)})
     if axis_drift.get("drifted_axes"):
         warnings.append({"episode": int(episode), "type": "axis_drift", "axes": list(axis_drift.get("drifted_axes", []))[:4]})
+    latest_business = {
+        "title_fitness": float(((story_state.get("title", {}) or {}).get("best_title", {}) or {}).get("title_fitness", 0.0) or 0.0),
+        "milestone_readiness": float((story_state.get("milestones", {}) or {}).get("milestone_readiness", 0.0) or 0.0),
+        "conversion_readiness": float((story_state.get("monetization", {}) or {}).get("conversion_readiness", 0.0) or 0.0),
+        "protagonist_sovereignty": float((story_state.get("protagonist_guard", {}) or {}).get("protagonist_sovereignty", 0.0) or 0.0),
+        "narrative_debt_score": float((story_state.get("narrative_debt", {}) or {}).get("narrative_debt_score", 0.0) or 0.0),
+        "emotion_wave_balance": float((story_state.get("emotion_wave", {}) or {}).get("emotion_wave_balance", 0.0) or 0.0),
+        "ip_readiness": float((story_state.get("ip_readiness", {}) or {}).get("ip_readiness", 0.0) or 0.0),
+    }
+    low_business_axes = []
+    if latest_business["title_fitness"] < 0.62:
+        low_business_axes.append("title_fitness")
+    if latest_business["milestone_readiness"] < 0.64:
+        low_business_axes.append("milestone_compliance")
+    if latest_business["conversion_readiness"] < 0.64:
+        low_business_axes.append("conversion_readiness")
+    if latest_business["protagonist_sovereignty"] < 0.66:
+        low_business_axes.append("protagonist_sovereignty")
+    if (1.0 - latest_business["narrative_debt_score"]) < 0.58:
+        low_business_axes.append("narrative_debt_health")
+    if latest_business["emotion_wave_balance"] < 0.58:
+        low_business_axes.append("emotion_wave_health")
+    if latest_business["ip_readiness"] < 0.55:
+        low_business_axes.append("ip_readiness")
+    if low_business_axes:
+        warnings.append({"episode": int(episode), "type": "business_axis", "axes": low_business_axes[:5]})
     system_status["warnings"] = warnings[-8:]
     system_status["drift"] = drift
     system_status["axis_drift"] = axis_drift
     system_status["rollback_signal"] = bool(drift.get("rollback_signal")) or bool(axis_drift.get("drifted_axes"))
     if portfolio_signals:
         system_status["latest_portfolio_signals"] = dict(portfolio_signals)
+    system_status["latest_business_signals"] = latest_business
+    system_status["latest_title_state"] = dict(story_state.get("title", {}) or {})
+    system_status["latest_revision_triggers"] = list((((story_state.get("control", {}) or {}).get("causal_repair", {}) or {}).get("revision_triggers", []) or []))
+    system_status["latest_business_recommendations"] = build_business_action_recommendations(system_status, runtime_cfg=runtime_cfg)[:5]
     state["system_status"] = system_status
     sync_story_state(state)
     return system_status
@@ -137,11 +169,19 @@ def simulate_long_run(
     portfolio_memory = dict((story_state or {}).get("portfolio_memory", {}) or {})
     repair = dict(((story_state or {}).get("control", {}) or {}).get("causal_repair", {}) or {})
     promise_graph = dict((story_state or {}).get("promise_graph", {}) or {})
+    monetization = dict((story_state or {}).get("monetization", {}) or {})
+    emotion_wave = dict((story_state or {}).get("emotion_wave", {}) or {})
+    narrative_debt = dict((story_state or {}).get("narrative_debt", {}) or {})
+    ip_state = dict((story_state or {}).get("ip_readiness", {}) or {})
     simulation_runs: Dict[str, Any] = {}
     release_guard = int(portfolio_memory.get("release_guard", 5) or 5)
     coordination_health = int(portfolio_memory.get("coordination_health", 5) or 5)
     payoff_integrity = float(promise_graph.get("payoff_integrity", 0.5) or 0.5)
     closure_score = float(repair.get("closure_score", 0.5) or 0.5)
+    conversion_readiness = float(monetization.get("conversion_readiness", 0.5) or 0.5)
+    fatigue_projection = float(emotion_wave.get("fatigue_projection", 0.5) or 0.5)
+    debt_score = float(narrative_debt.get("narrative_debt_score", 0.5) or 0.5)
+    ip_axis = float(ip_state.get("ip_readiness", 0.5) or 0.5)
     for horizon in horizons:
         history: List[float] = []
         repair_rate_history: List[float] = []
@@ -153,7 +193,11 @@ def simulate_long_run(
                 + (coordination_health / 10.0) * 0.012
                 + payoff_integrity * 0.01
                 + closure_score * 0.008
+                + conversion_readiness * 0.01
+                + ip_axis * 0.005
                 - cycle * 0.018
+                - fatigue_projection * 0.012
+                - debt_score * 0.012
             )
             repair_rate = _clamp(0.76 + closure_score * 0.12 - cycle * 0.08)
             history.append(round(quality, 4))
