@@ -7,6 +7,14 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, List
 
+from .business_operator import (
+    BUSINESS_AXIS_THRESHOLDS,
+    apply_recommendation_to_runtime,
+    build_business_axis_snapshot,
+    build_business_action_recommendations,
+    record_business_adjustment,
+    sync_business_adjustment_outcomes,
+)
 from .config import load_config
 from .cross_track_release import build_cross_track_release_plan
 from .reliability import detect_axis_drift, detect_quality_drift
@@ -68,6 +76,7 @@ GENRE_PRESETS: Dict[str, Dict[str, Any]] = {
 
 SIMPLE_MODE_FIELDS = [
     "project_name",
+    "project_title",
     "platform",
     "genre_bucket",
     "generation_enabled",
@@ -236,6 +245,7 @@ def build_confirmation_summary(runtime_cfg: Dict[str, Any], action: str, target_
     return {
         "action": action,
         "project": str(project_setup.get("name", "METAOS_Project")),
+        "title": str(project_setup.get("title", "") or ""),
         "track_scope": target_track or f"{configured_track_count(runtime_cfg, 1)} tracks",
         "release_cadence": f"{runtime_cfg.get('release_cadence', {}).get('mode', 'queue_loop')} / {configured_loop_steps(runtime_cfg, 1)} steps",
         "repair_budget": int((runtime_cfg.get("evaluation", {}) or {}).get("causal_repair_retry_budget", 2) or 2),
@@ -283,7 +293,6 @@ def initialize_console_state(
     policy_action_path: str = POLICY_ACTION_PATH,
 ) -> Dict[str, Any]:
     runtime_cfg = apply_console_presets(load_runtime_config(runtime_config_path))
-    save_runtime_config(runtime_cfg, path=runtime_config_path)
     paths = dict(runtime_cfg.get("paths", {}) or {})
     system_status_path = str(paths.get("system_status_path", system_status_path))
     policy_action_path = str(paths.get("policy_action_path", policy_action_path))
@@ -297,9 +306,12 @@ def initialize_console_state(
         )
     if not os.path.exists(policy_action_path):
         save_policy_action({}, path=policy_action_path)
+    system_status_payload = read_json_file(system_status_path)
+    runtime_cfg = sync_business_adjustment_outcomes(runtime_cfg, dict(system_status_payload.get("system_status", {}) or {}))
+    save_runtime_config(runtime_cfg, path=runtime_config_path)
     return {
         "runtime_config": runtime_cfg,
-        "system_status": read_json_file(system_status_path),
+        "system_status": system_status_payload,
         "policy_action": load_policy_action(policy_action_path),
     }
 
@@ -398,6 +410,46 @@ def build_history_trends(system_status_payload: Dict[str, Any], policy_action_pa
         "drift_history": drift_history,
         "release_decision_history": release_history,
         "portfolio_signal_trend": list(system_status.get("portfolio_signal_history", []) or []),
+        "business_axis_trends": {
+            axis: list((system_status.get("axis_history", {}) or {}).get(axis, []) or [])
+            for axis in BUSINESS_AXIS_THRESHOLDS
+        },
+    }
+
+
+def build_studio_os_dashboard(system_status_payload: Dict[str, Any], runtime_cfg: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    system_status = dict(system_status_payload.get("system_status", system_status_payload) or {})
+    latest_business = dict(system_status.get("latest_business_signals", {}) or {})
+    axis_history = dict(system_status.get("axis_history", {}) or {})
+    warnings = [item for item in list(system_status.get("warnings", []) or []) if item.get("type") == "business_axis"]
+    cards = []
+    for axis, threshold in BUSINESS_AXIS_THRESHOLDS.items():
+        trend = list(axis_history.get(axis, []) or [])
+        value = latest_business.get(axis)
+        if value is None and axis == "milestone_compliance":
+            value = latest_business.get("milestone_readiness")
+        status = "ok"
+        if value is None:
+            status = "no_data"
+        elif float(value) < threshold:
+            status = "warning"
+        cards.append(
+            {
+                "axis": axis,
+                "value": value,
+                "threshold": threshold,
+                "trend": trend,
+                "status": status,
+            }
+        )
+    return {
+        "cards": cards,
+        "latest_business_signals": latest_business,
+        "latest_title_state": dict(system_status.get("latest_title_state", {}) or {}),
+        "latest_revision_triggers": list(system_status.get("latest_revision_triggers", []) or []),
+        "recommendations": build_business_action_recommendations(system_status, runtime_cfg=runtime_cfg)[:5],
+        "business_learning": dict((runtime_cfg or {}).get("business_control", {}).get("learning", {}) if isinstance(runtime_cfg, dict) else {}),
+        "warnings": warnings[-4:],
     }
 
 
@@ -484,6 +536,9 @@ def build_home_dashboard(runtime_cfg: Dict[str, Any], system_status_payload: Dic
         "latest_warning": error_panel.get("latest_warning"),
         "latest_error": error_panel.get("latest_error"),
         "next_recommended_action": "pause" if error_panel.get("rollback_signal") else "release_plan" if track_count else "generate",
+        "latest_business_signals": dict(system_status.get("latest_business_signals", {}) or {}),
+        "business_recommendations": build_business_action_recommendations(system_status, runtime_cfg=runtime_cfg)[:5],
+        "business_learning": dict((runtime_cfg.get("business_control", {}) or {}).get("learning", {}) or {}),
     }
 
 
@@ -509,6 +564,10 @@ def execute_policy_action(
     action = str(action_state.get("action", "idle") or "idle")
     payload = dict(action_state.get("payload", {}) or {})
     runtime_cfg = apply_console_presets(load_runtime_config(runtime_config_path))
+    paths = dict(runtime_cfg.get("paths", {}) or {})
+    system_status_payload = read_json_file(str(paths.get("system_status_path", DEFAULT_SYSTEM_STATUS_PATH)))
+    system_status = dict(system_status_payload.get("system_status", {}) or {})
+    runtime_cfg = sync_business_adjustment_outcomes(runtime_cfg, system_status)
     save_runtime_config(runtime_cfg, path=runtime_config_path)
     cfg, runtime_cfg = load_runtime_config_into_cfg(load_config(config_path), runtime_config_path)
     cfg["safe_mode"] = bool(cfg.get("safe_mode", True))
@@ -621,6 +680,27 @@ def execute_policy_action(
             save_runtime_config(updated_runtime, path=runtime_config_path)
             result["runtime_config"] = updated_runtime
             result["warning"] = warning
+        elif action == "apply_business_adjustment":
+            rec_id = str(payload.get("recommendation_id", "") or "")
+            recommendations = build_business_action_recommendations(system_status, runtime_cfg=runtime_cfg)
+            recommendation = next((item for item in recommendations if item.get("id") == rec_id), None)
+            if recommendation is None:
+                raise ValueError(f"Unknown recommendation_id: {rec_id}")
+            updated_runtime = apply_recommendation_to_runtime(runtime_cfg, recommendation)
+            updated_runtime = record_business_adjustment(
+                updated_runtime,
+                recommendation,
+                before_signals=build_business_axis_snapshot(system_status),
+                executed_at=_now(),
+            )
+            save_runtime_config(updated_runtime, path=runtime_config_path)
+            result["applied_adjustment"] = {
+                "recommendation_id": rec_id,
+                "action_type": recommendation.get("action_type"),
+                "trigger_axis": recommendation.get("axis"),
+                "payload": recommendation.get("payload", {}),
+            }
+            result["runtime_config"] = updated_runtime
         else:
             result["message"] = "No executable action requested."
     except Exception as exc:

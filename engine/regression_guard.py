@@ -16,6 +16,13 @@ PROTECTED_AXES = [
     "world_logic",
     "chemistry",
     "stability",
+    "title_fitness",
+    "milestone_compliance",
+    "conversion_readiness",
+    "protagonist_sovereignty",
+    "narrative_debt_health",
+    "emotion_wave_health",
+    "ip_readiness",
 ]
 
 
