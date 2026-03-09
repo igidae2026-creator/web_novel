@@ -1,0 +1,81 @@
+{
+  "npcs": [
+    {
+      "npc_id": "henesys_maya",
+      "name": "Maya",
+      "region_id": "henesys",
+      "role": "healer",
+      "personality": [
+        "kind",
+        "fragile",
+        "hopeful"
+      ],
+      "speech_style": "gentle_formal",
+      "services": [
+        "healing",
+        "quest_giver"
+      ],
+      "related_quests": [
+        "maya_medicine_01"
+      ],
+      "relationships": [
+        {
+          "target_npc_id": "henesys_teo",
+          "type": "trust"
+        }
+      ],
+      "_evidence": {
+        "source_file": "npc_henesys.txt",
+        "fields": [
+          "name",
+          "npc_id",
+          "personality",
+          "region_id",
+          "related_quests",
+          "relationships",
+          "role",
+          "services",
+          "speech_style"
+        ]
+      }
+    },
+    {
+      "npc_id": "henesys_teo",
+      "name": "Teo",
+      "region_id": "henesys",
+      "role": "scout",
+      "personality": [
+        "alert",
+        "loyal"
+      ],
+      "speech_style": "brisk_friendly",
+      "services": [
+        "warning",
+        "quest_giver"
+      ],
+      "related_quests": [
+        "forest_warning_02"
+      ],
+      "relationships": [
+        {
+          "target_npc_id": "henesys_maya",
+          "type": "trust"
+        }
+      ],
+      "_evidence": {
+        "source_file": "npc_henesys.txt",
+        "fields": [
+          "name",
+          "npc_id",
+          "personality",
+          "region_id",
+          "related_quests",
+          "relationships",
+          "role",
+          "services",
+          "speech_style"
+        ]
+      }
+    }
+  ]
+}

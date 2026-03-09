@@ -1,6 +1,28 @@
 {
+  "console": {
+    "language": "ko",
+    "mode": "simple",
+    "current_project": "METAOS_Project"
+  },
+  "presets": {
+    "project": "Steady Series",
+    "platform": "Munpia Standard",
+    "genre": "A"
+  },
+  "project_setup": {
+    "name": "METAOS_Project",
+    "platform": "Munpia",
+    "genre_bucket": "A",
+    "sub_engine": "AUTO",
+    "target_total_episodes": 300,
+    "early_focus_episodes": 3
+  },
   "generation_enabled": true,
   "track_count": 6,
+  "generation_control": {
+    "flow": "track_queue",
+    "auto_outline": true
+  },
   "release_cadence": {
     "mode": "queue_loop",
     "steps_per_run": 1
@@ -8,9 +30,61 @@
   "portfolio": {
     "mode": "balanced"
   },
+  "release_scheduler": {
+    "strategy": "adaptive",
+    "window_count": 6
+  },
   "evaluation": {
     "max_revision_passes": 2,
     "causal_repair_retry_budget": 2,
     "viral_required": true
+  },
+  "reliability": {
+    "simulation_horizons": [
+      30,
+      60,
+      120
+    ],
+    "drift_check_enabled": true
+  },
+  "operator_overrides": {
+    "held_tracks": [],
+    "boosted_tracks": [],
+    "ignored_recommendations": []
+  },
+  "review_state": {
+    "review_queue": [],
+    "approved_episodes": [],
+    "held_episodes": []
+  },
+  "snapshots": {
+    "saved": {},
+    "last_stable": {}
+  },
+  "projects": {
+    "METAOS_Project": {
+      "project_setup": {
+        "name": "METAOS_Project",
+        "platform": "Munpia",
+        "genre_bucket": "A",
+        "sub_engine": "AUTO",
+        "target_total_episodes": 300,
+        "early_focus_episodes": 3
+      },
+      "paths": {
+        "tracks_root": "domains/webnovel/projects/metaos_project/tracks",
+        "system_status_path": "outputs/projects/metaos_project/system_status.json",
+        "policy_action_path": "outputs/projects/metaos_project/policy_action.json",
+        "project_output_dir": "outputs/projects/metaos_project",
+        "project_metrics_path": "outputs/projects/metaos_project/metrics.jsonl"
+      }
+    }
+  },
+  "paths": {
+    "tracks_root": "domains/webnovel/projects/metaos_project/tracks",
+    "system_status_path": "outputs/projects/metaos_project/system_status.json",
+    "policy_action_path": "outputs/projects/metaos_project/policy_action.json",
+    "project_output_dir": "outputs/projects/metaos_project",
+    "project_metrics_path": "outputs/projects/metaos_project/metrics.jsonl"
   }
 }

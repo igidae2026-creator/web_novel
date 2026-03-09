@@ -1,0 +1,6 @@
+forbidden_words: cyber, mecha, neon
+forbidden_styles: modern_slang, grimdark_overkill
+allowed_name_style: fantasy_koreanized_maple_tone
+forbidden_tones: explicit_horror, nihilistic_edgelord
+required_tones: whimsical, adventurous, emotionally_clear
+forbidden_patterns: direct_copy_of_existing_maplestory_lore, overly_complex_political_drama, immersion_breaking_meta_jokes

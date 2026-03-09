@@ -13,8 +13,30 @@ DEFAULT_RUNTIME_CONFIG_PATH = "runtime_config.json"
 DEFAULT_SYSTEM_STATUS_PATH = os.path.join("outputs", "system_status.json")
 
 DEFAULT_RUNTIME_CONFIG: Dict[str, Any] = {
+    "console": {
+        "language": "ko",
+        "mode": "simple",
+        "current_project": "METAOS_Project",
+    },
+    "presets": {
+        "project": "Steady Series",
+        "platform": "Munpia Standard",
+        "genre": "A",
+    },
+    "project_setup": {
+        "name": "METAOS_Project",
+        "platform": "Munpia",
+        "genre_bucket": "A",
+        "sub_engine": "AUTO",
+        "target_total_episodes": 300,
+        "early_focus_episodes": 3,
+    },
     "generation_enabled": True,
     "track_count": 6,
+    "generation_control": {
+        "flow": "track_queue",
+        "auto_outline": True,
+    },
     "release_cadence": {
         "mode": "queue_loop",
         "steps_per_run": 1,
@@ -22,10 +44,56 @@ DEFAULT_RUNTIME_CONFIG: Dict[str, Any] = {
     "portfolio": {
         "mode": "balanced",
     },
+    "release_scheduler": {
+        "strategy": "adaptive",
+        "window_count": 6,
+    },
     "evaluation": {
         "max_revision_passes": 2,
         "causal_repair_retry_budget": 2,
         "viral_required": True,
+    },
+    "reliability": {
+        "simulation_horizons": [30, 60, 120],
+        "drift_check_enabled": True,
+    },
+    "operator_overrides": {
+        "held_tracks": [],
+        "boosted_tracks": [],
+        "ignored_recommendations": [],
+    },
+    "review_state": {
+        "review_queue": [],
+        "approved_episodes": [],
+        "held_episodes": [],
+    },
+    "snapshots": {
+        "saved": {},
+        "last_stable": {},
+    },
+    "projects": {
+        "METAOS_Project": {
+            "project_setup": {
+                "name": "METAOS_Project",
+                "platform": "Munpia",
+                "genre_bucket": "A",
+                "sub_engine": "AUTO",
+                "target_total_episodes": 300,
+                "early_focus_episodes": 3,
+            },
+            "paths": {
+                "tracks_root": os.path.join("domains", "webnovel", "projects", "metaos_project", "tracks"),
+                "system_status_path": os.path.join("outputs", "projects", "metaos_project", "system_status.json"),
+                "policy_action_path": os.path.join("outputs", "projects", "metaos_project", "policy_action.json"),
+                "project_output_dir": os.path.join("outputs", "projects", "metaos_project"),
+            },
+        }
+    },
+    "paths": {
+        "tracks_root": os.path.join("domains", "webnovel", "tracks"),
+        "system_status_path": DEFAULT_SYSTEM_STATUS_PATH,
+        "policy_action_path": os.path.join("outputs", "policy_action.json"),
+        "project_output_dir": os.path.join("outputs", "METAOS_Project"),
     },
 }
 
@@ -102,6 +170,22 @@ def apply_runtime_config(cfg: Dict[str, Any], runtime_cfg: Dict[str, Any] | None
             "release_cadence": dict(runtime_cfg.get("release_cadence", {}) or {}),
         }
     }
+    project_setup = dict(runtime_cfg.get("project_setup", {}) or {})
+    if project_setup:
+        override.setdefault("project", {})
+        override.setdefault("novel", {})
+        if project_setup.get("name"):
+            override["project"]["name"] = str(project_setup["name"])
+        if project_setup.get("platform"):
+            override["project"]["platform"] = str(project_setup["platform"])
+        if project_setup.get("genre_bucket"):
+            override["project"]["genre_bucket"] = str(project_setup["genre_bucket"])
+        if project_setup.get("sub_engine"):
+            override["project"]["sub_engine"] = str(project_setup["sub_engine"])
+        if project_setup.get("target_total_episodes") is not None:
+            override["novel"]["total_episodes"] = int(project_setup["target_total_episodes"])
+        if project_setup.get("early_focus_episodes") is not None:
+            override["novel"]["early_focus_episodes"] = int(project_setup["early_focus_episodes"])
     portfolio_cfg = dict(runtime_cfg.get("portfolio", {}) or {})
     if portfolio_cfg:
         override["portfolio"] = portfolio_cfg
