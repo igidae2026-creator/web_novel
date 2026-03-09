@@ -1,0 +1,30 @@
+{
+  "type": "object",
+  "required": ["naming_constraints", "tone_constraints", "content_constraints"],
+  "properties": {
+    "naming_constraints": {
+      "type": "object",
+      "required": ["forbidden_words", "forbidden_styles", "allowed_name_style"],
+      "properties": {
+        "forbidden_words": {"type": "array", "items": {"type": "string"}},
+        "forbidden_styles": {"type": "array", "items": {"type": "string"}},
+        "allowed_name_style": {"type": "string"}
+      }
+    },
+    "tone_constraints": {
+      "type": "object",
+      "required": ["forbidden_tones", "required_tones"],
+      "properties": {
+        "forbidden_tones": {"type": "array", "items": {"type": "string"}},
+        "required_tones": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "content_constraints": {
+      "type": "object",
+      "required": ["forbidden_patterns"],
+      "properties": {
+        "forbidden_patterns": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

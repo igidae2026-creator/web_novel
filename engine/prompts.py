@@ -4,6 +4,60 @@ from .profile import profile_constraints_text
 
 class PROMPTS:
     @staticmethod
+    def worldbuilding_structured_draft_json(asset_text: str, schema_name: str) -> str:
+        return f"""다음 worldbuilding asset에서 구조화 초안을 추출하라.
+
+목표 스키마: {schema_name}
+
+규칙:
+- STRICT JSON ONLY
+- asset에 직접 없는 사실은 추가하지 말 것
+- 불명확하면 null 또는 [] 사용
+- ID는 lower_snake_case
+- machine-friendly field name만 사용
+
+원본 asset:
+{asset_text}
+"""
+
+    @staticmethod
+    def worldbuilding_grounded_extraction_json(asset_text: str, draft_json: dict, schema_name: str) -> str:
+        return f"""다음 worldbuilding asset과 초안 JSON을 대조하여 grounded extraction 결과를 출력하라.
+
+목표 스키마: {schema_name}
+
+규칙:
+- STRICT JSON ONLY
+- 원본 asset에 근거 없는 사실은 제거
+- 근거 부족 필드는 null 또는 []
+- naming/tone/style은 통제된 vocabulary를 우선 사용
+- unsupported lore invention 금지
+
+원본 asset:
+{asset_text}
+
+초안 JSON:
+{draft_json}
+"""
+
+    @staticmethod
+    def worldbuilding_consistency_repair_json(payload_json: dict, validation_errors: list[str]) -> str:
+        return f"""다음 JSON export를 consistency 기준에 맞게 보수하라.
+
+규칙:
+- STRICT JSON ONLY
+- validation error를 해소하되 근거 없는 사실 추가 금지
+- 참조가 불명확하면 null 또는 [] 사용
+- stable id 유지
+
+검증 오류:
+{validation_errors}
+
+입력 JSON:
+{payload_json}
+"""
+
+    @staticmethod
     def master_outline(cfg: dict, ext_snapshot: dict, sub_engine_key: str) -> str:
         pj = cfg["project"]
         nv = cfg["novel"]

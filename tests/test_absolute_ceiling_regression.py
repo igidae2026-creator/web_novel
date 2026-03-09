@@ -30,10 +30,27 @@ from engine.regression_guard import portfolio_signal_decision, release_policy_de
 from engine.portfolio_orchestrator import build_portfolio_runtime_snapshot, rebalance_platform
 from engine.cross_track_release import build_cross_track_release_plan
 from engine.cross_track_release import apply_queue_release_outcome, apply_runtime_release_to_state, build_runtime_release_learning_snapshot, learn_runtime_release_outcome_in_state, refresh_queue_release_runtime, resolve_queue_release_action
+from engine.control_console import (
+    apply_console_presets,
+    build_confirmation_summary,
+    build_error_warning_panel,
+    build_history_trends,
+    build_operator_overrides,
+    execute_policy_action,
+    get_console_mode_fields,
+    load_policy_action,
+    load_runtime_snapshot,
+    request_policy_action,
+    requires_confirmation,
+    restore_last_stable_config,
+    save_policy_action,
+    save_runtime_snapshot,
+)
 from engine.runtime_config import list_latest_episodes, load_runtime_config, load_runtime_config_into_cfg, read_recent_metrics, save_runtime_config, write_system_status_snapshot
 import json
 import os
 import tempfile
+from unittest.mock import patch
 
 
 def test_information_asymmetry_promotes_reveal_structure():
@@ -1095,3 +1112,301 @@ def test_runtime_dashboard_helpers_read_metrics_and_latest_episodes():
         assert latest
         assert latest[0]["name"] == "episode_001.txt"
         assert metrics[0]["episode"] == 2
+
+
+def test_console_presets_map_project_platform_and_genre():
+    merged = apply_console_presets(
+        {
+            "presets": {
+                "project": "Launch Sprint",
+                "platform": "KakaoPage Velocity",
+                "genre": "F",
+            },
+            "project_setup": {"name": "ConsoleProject"},
+        }
+    )
+
+    assert merged["project_setup"]["platform"] == "KakaoPage"
+    assert merged["project_setup"]["genre_bucket"] == "F"
+    assert merged["track_count"] == 9
+    assert merged["evaluation"]["viral_required"] is True
+
+
+def test_policy_action_release_plan_runs_from_runtime_files():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config_path = os.path.join(tmpdir, "config.yaml")
+        runtime_path = os.path.join(tmpdir, "runtime_config.json")
+        policy_path = os.path.join(tmpdir, "outputs", "policy_action.json")
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        for name, retention in [("track_a", 0.82), ("track_b", 0.71)]:
+            tdir = os.path.join(tracks_root, name)
+            os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+            with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+                json.dump({"project": {"platform": "Munpia", "genre_bucket": "A"}}, f)
+            with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+                f.write(json.dumps({"episode": 1, "retention": {"predicted_next_episode": retention}, "scores": {"repetition_score": 0.12}, "external": {"top_percent": 4.0, "slope": -0.05, "event_flag": True}}) + "\n")
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(
+                "project:\n"
+                "  name: Demo\n"
+                "  platform: Munpia\n"
+                "  genre_bucket: A\n"
+                "  sub_engine: AUTO\n"
+                "output:\n"
+                "  root_dir: outputs\n"
+                "  save_metrics_jsonl: true\n"
+                "limits:\n"
+                "  max_revision_passes: 2\n"
+                "quality:\n"
+                "  viral_required: true\n"
+                "novel:\n"
+                "  total_episodes: 100\n"
+                "  early_focus_episodes: 3\n"
+                "safe_mode: true\n"
+                "portfolio:\n"
+                "  mode: balanced\n"
+            )
+        save_runtime_config(
+            {
+                "paths": {
+                    "tracks_root": tracks_root,
+                    "system_status_path": os.path.join(tmpdir, "outputs", "system_status.json"),
+                    "policy_action_path": policy_path,
+                }
+            },
+            path=runtime_path,
+        )
+
+        request_policy_action("release_plan", path=policy_path)
+        result = execute_policy_action(config_path=config_path, runtime_config_path=runtime_path, policy_action_path=policy_path)
+
+        assert result["status"] == "completed"
+        assert result["result"]["release_plan"]["release_plan"]
+        assert load_policy_action(policy_path)["action"] == "release_plan"
+
+
+def test_policy_action_reliability_check_reads_system_status():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config_path = os.path.join(tmpdir, "config.yaml")
+        runtime_path = os.path.join(tmpdir, "runtime_config.json")
+        policy_path = os.path.join(tmpdir, "outputs", "policy_action.json")
+        system_status_path = os.path.join(tmpdir, "outputs", "system_status.json")
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(
+                "project:\n"
+                "  name: Demo\n"
+                "  platform: Munpia\n"
+                "  genre_bucket: A\n"
+                "  sub_engine: AUTO\n"
+                "output:\n"
+                "  root_dir: outputs\n"
+                "  save_metrics_jsonl: true\n"
+                "limits:\n"
+                "  max_revision_passes: 2\n"
+                "quality:\n"
+                "  viral_required: true\n"
+                "novel:\n"
+                "  total_episodes: 100\n"
+                "  early_focus_episodes: 3\n"
+                "safe_mode: true\n"
+                "portfolio:\n"
+                "  mode: balanced\n"
+            )
+        os.makedirs(os.path.dirname(system_status_path), exist_ok=True)
+        with open(system_status_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "updated_at": "2026-03-09T00:00:00",
+                    "system_status": {
+                        "balanced_total_history": [0.86, 0.859, 0.858, 0.79, 0.782, 0.776],
+                        "axis_history": {
+                            "coherence": [0.84, 0.842, 0.841, 0.79, 0.786, 0.782],
+                        },
+                        "warnings": [],
+                        "rollback_signal": False,
+                    },
+                    "runtime_config": {},
+                },
+                f,
+                ensure_ascii=False,
+            )
+        save_runtime_config(
+            {
+                "paths": {
+                    "tracks_root": os.path.join(tmpdir, "tracks"),
+                    "system_status_path": system_status_path,
+                    "policy_action_path": policy_path,
+                }
+            },
+            path=runtime_path,
+        )
+
+        request_policy_action("reliability_check", path=policy_path)
+        result = execute_policy_action(config_path=config_path, runtime_config_path=runtime_path, policy_action_path=policy_path)
+
+        assert result["status"] == "completed"
+        assert result["result"]["reliability"]["quality_drift"]["warning"]
+
+
+def test_console_mode_fields_keep_simple_mode_narrower_than_advanced():
+    simple_fields = get_console_mode_fields("simple")
+    advanced_fields = get_console_mode_fields("advanced")
+
+    assert "sub_engine" not in simple_fields
+    assert "sub_engine" in advanced_fields
+    assert set(simple_fields).issubset(set(advanced_fields))
+
+
+def test_runtime_snapshot_save_load_and_restore_last_stable():
+    runtime_cfg = apply_console_presets(
+        {
+            "project_setup": {"name": "SnapshotProject", "platform": "Munpia", "genre_bucket": "A"},
+            "console": {"current_project": "SnapshotProject"},
+        }
+    )
+    saved = save_runtime_snapshot(runtime_cfg, "ops_v1")
+    saved["project_setup"]["platform"] = "KakaoPage"
+    restored = load_runtime_snapshot(saved, "ops_v1")
+    stable = restore_last_stable_config(saved)
+
+    assert restored["project_setup"]["platform"] == "Munpia"
+    assert stable["project_setup"]["platform"] == "Munpia"
+
+
+def test_confirmation_flow_helpers_require_high_impact_actions():
+    runtime_cfg = apply_console_presets(
+        {
+            "project_setup": {"name": "ConfirmProject"},
+            "track_count": 5,
+            "release_cadence": {"mode": "queue_loop", "steps_per_run": 3},
+            "evaluation": {"causal_repair_retry_budget": 4, "max_revision_passes": 3},
+            "portfolio": {"mode": "focused"},
+        }
+    )
+    summary = build_confirmation_summary(runtime_cfg, "auto_loop")
+
+    assert requires_confirmation("auto_loop", loop_active=False)
+    assert requires_confirmation("pause", loop_active=True)
+    assert not requires_confirmation("generate", loop_active=False)
+    assert summary["project"] == "ConfirmProject"
+    assert summary["repair_budget"] == 4
+
+
+def test_error_warning_panel_extracts_latest_runtime_signals():
+    panel = build_error_warning_panel(
+        {
+            "system_status": {
+                "warnings": [{"type": "quality_drift", "drop": 0.03}],
+                "rollback_signal": True,
+                "drift": {"warning": True, "drop": 0.03},
+                "axis_drift": {"drifted_axes": ["coherence"]},
+            }
+        },
+        {
+            "latest_error": "failed action",
+            "last_failed_action": {"action": "auto_loop"},
+        },
+    )
+
+    assert panel["latest_warning"]["type"] == "quality_drift"
+    assert panel["latest_error"] == "failed action"
+    assert panel["rollback_signal"] is True
+
+
+def test_history_trends_load_balanced_repair_and_release_histories():
+    history = build_history_trends(
+        {
+            "updated_at": "2026-03-09T12:00:00",
+            "system_status": {
+                "balanced_total_history": [0.81, 0.82, 0.83],
+                "repair_rate_history": [0.9, 0.85, 0.88],
+                "portfolio_signal_history": [{"episode": 1}, {"episode": 2}],
+                "drift": {"drop": 0.01, "warning": False},
+            },
+        },
+        {
+            "history": [
+                {"action": "release_plan", "status": "completed"},
+                {"action": "pause", "status": "completed"},
+            ]
+        },
+    )
+
+    assert history["balanced_total_trend"][-1] == 0.83
+    assert history["repair_rate_trend"][0] == 0.9
+    assert len(history["release_decision_history"]) == 2
+
+
+def test_operator_override_action_writes_runtime_state():
+    updated = build_operator_overrides(
+        apply_console_presets({"project_setup": {"name": "OpsProject"}}),
+        "hold_track",
+        target_track="track_alpha",
+        note="manual hold",
+    )
+
+    assert "track_alpha" in updated["operator_overrides"]["held_tracks"]
+
+
+def test_policy_action_result_replaces_previous_result_payload():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "policy_action.json")
+        save_policy_action(
+            {"action": "release_plan", "status": "completed", "result": {"release_plan": {"ok": True}}},
+            path=path,
+        )
+        updated = save_policy_action(
+            {"action": "reliability_check", "status": "completed", "result": {"reliability": {"ok": True}}},
+            path=path,
+        )
+
+        assert "release_plan" not in updated["result"]
+        assert updated["result"]["reliability"]["ok"] is True
+
+
+def test_pause_action_calls_queue_pause_and_disables_generation():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config_path = os.path.join(tmpdir, "config.yaml")
+        runtime_path = os.path.join(tmpdir, "runtime_config.json")
+        policy_path = os.path.join(tmpdir, "outputs", "policy_action.json")
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(
+                "project:\n"
+                "  name: Demo\n"
+                "  platform: Munpia\n"
+                "  genre_bucket: A\n"
+                "  sub_engine: AUTO\n"
+                "output:\n"
+                "  root_dir: outputs\n"
+                "  save_metrics_jsonl: true\n"
+                "limits:\n"
+                "  max_revision_passes: 2\n"
+                "quality:\n"
+                "  viral_required: true\n"
+                "novel:\n"
+                "  total_episodes: 100\n"
+                "  early_focus_episodes: 3\n"
+                "safe_mode: true\n"
+                "portfolio:\n"
+                "  mode: balanced\n"
+            )
+        save_runtime_config(
+            {
+                "generation_enabled": True,
+                "paths": {
+                    "tracks_root": os.path.join(tmpdir, "tracks"),
+                    "system_status_path": os.path.join(tmpdir, "outputs", "system_status.json"),
+                    "policy_action_path": policy_path,
+                }
+            },
+            path=runtime_path,
+        )
+
+        request_policy_action("pause", path=policy_path)
+        with patch("engine.track_queue.pause_queue", return_value={"status": "paused"}) as mocked_pause:
+            result = execute_policy_action(config_path=config_path, runtime_config_path=runtime_path, policy_action_path=policy_path)
+
+        assert mocked_pause.called
+        assert result["result"]["queue"]["status"] == "paused"
+        assert load_runtime_config(runtime_path)["generation_enabled"] is False

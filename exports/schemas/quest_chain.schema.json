@@ -1,0 +1,40 @@
+{
+  "type": "object",
+  "required": ["quest_chains"],
+  "properties": {
+    "quest_chains": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["chain_id", "theme", "quests"],
+        "properties": {
+          "chain_id": {"type": "string"},
+          "theme": {"type": ["string", "null"]},
+          "quests": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["quest_id", "start_npc_id", "region_id", "objective", "steps", "rewards", "next_quest_id"],
+              "properties": {
+                "quest_id": {"type": "string"},
+                "start_npc_id": {"type": ["string", "null"]},
+                "region_id": {"type": ["string", "null"]},
+                "objective": {"type": ["string", "null"]},
+                "steps": {"type": "array", "items": {"type": "string"}},
+                "rewards": {
+                  "type": "object",
+                  "required": ["items", "exp"],
+                  "properties": {
+                    "items": {"type": "array", "items": {"type": "string"}},
+                    "exp": {"type": ["integer", "null"]}
+                  }
+                },
+                "next_quest_id": {"type": ["string", "null"]}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

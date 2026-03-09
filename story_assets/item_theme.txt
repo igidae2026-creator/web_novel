@@ -1,0 +1,3 @@
+theme_id: woodland_beginner_gear
+tags: wood, leaf, simple, starter
+region_ids: henesys

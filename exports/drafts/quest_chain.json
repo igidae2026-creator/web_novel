@@ -1,0 +1,53 @@
+{
+  "quest_chains": [
+    {
+      "chain_id": "henesys_beginner_arc",
+      "theme": "growth_and_trust",
+      "quests": [
+        {
+          "quest_id": "maya_medicine_01",
+          "start_npc_id": "henesys_maya",
+          "region_id": "henesys",
+          "objective": "collect_herbs",
+          "steps": [
+            "talk_to_maya",
+            "collect_5_green_herbs",
+            "return_to_maya"
+          ],
+          "rewards": {
+            "items": [
+              "basic_potion"
+            ],
+            "exp": 100
+          },
+          "next_quest_id": "forest_warning_02"
+        },
+        {
+          "quest_id": "forest_warning_02",
+          "start_npc_id": "henesys_teo",
+          "region_id": "henesys",
+          "objective": "scout_forest_edge",
+          "steps": [
+            "talk_to_teo",
+            "inspect_forest_edge",
+            "return_to_teo"
+          ],
+          "rewards": {
+            "items": [
+              "beginner_arrow_bundle"
+            ],
+            "exp": 150
+          },
+          "next_quest_id": null
+        }
+      ],
+      "_evidence": {
+        "source_file": "quest_chain_01.txt",
+        "fields": [
+          "chain_id",
+          "theme"
+        ]
+      }
+    }
+  ]
+}

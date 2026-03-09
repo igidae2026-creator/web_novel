@@ -1,0 +1,9 @@
+region_id: henesys
+name: Henesys
+tone: warm_peaceful_frontier
+palette: green, light_brown, warm_sunlight
+architecture: wooden_houses, open_fields, mushroom_roofs
+landmarks: training_ground, village_square, forest_edge
+factions: villagers, hunters, traveling_merchants
+hazards: forest_monsters, hidden_ruins
+keywords: pastoral, beginner_town, gentle_adventure

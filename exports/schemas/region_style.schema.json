@@ -1,0 +1,30 @@
+{
+  "type": "object",
+  "required": ["regions"],
+  "properties": {
+    "regions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["region_id", "name", "tone", "visual_style", "factions", "hazards", "keywords"],
+        "properties": {
+          "region_id": {"type": "string"},
+          "name": {"type": ["string", "null"]},
+          "tone": {"type": ["string", "null"]},
+          "visual_style": {
+            "type": "object",
+            "required": ["palette", "architecture", "landmarks"],
+            "properties": {
+              "palette": {"type": "array", "items": {"type": "string"}},
+              "architecture": {"type": "array", "items": {"type": "string"}},
+              "landmarks": {"type": "array", "items": {"type": "string"}}
+            }
+          },
+          "factions": {"type": "array", "items": {"type": "string"}},
+          "hazards": {"type": "array", "items": {"type": "string"}},
+          "keywords": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

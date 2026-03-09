@@ -1,0 +1,30 @@
+{
+  "monster_themes": [
+    {
+      "theme_id": "forest_mushroom",
+      "tags": [
+        "cute",
+        "spore",
+        "forest",
+        "beginner_enemy"
+      ],
+      "region_ids": [
+        "henesys"
+      ]
+    }
+  ],
+  "item_themes": [
+    {
+      "theme_id": "woodland_beginner_gear",
+      "tags": [
+        "wood",
+        "leaf",
+        "simple",
+        "starter"
+      ],
+      "region_ids": [
+        "henesys"
+      ]
+    }
+  ]
+}

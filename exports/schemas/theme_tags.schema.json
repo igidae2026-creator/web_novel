@@ -1,0 +1,30 @@
+{
+  "type": "object",
+  "required": ["monster_themes", "item_themes"],
+  "properties": {
+    "monster_themes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["theme_id", "tags", "region_ids"],
+        "properties": {
+          "theme_id": {"type": "string"},
+          "tags": {"type": "array", "items": {"type": "string"}},
+          "region_ids": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "item_themes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["theme_id", "tags", "region_ids"],
+        "properties": {
+          "theme_id": {"type": "string"},
+          "tags": {"type": "array", "items": {"type": "string"}},
+          "region_ids": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}
