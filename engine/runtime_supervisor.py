@@ -108,7 +108,18 @@ def update_supervisor_from_queue(
     state["recovery_required"] = bool(queue_state.get("last_error"))
     state["last_event_type"] = "job_queue_synced"
     saved = save_supervisor_state(state, path=path, safe_mode=safe_mode)
-    log_event(os.path.dirname(path), "supervisor_snapshot_updated", {"status": saved["status"]}, safe_mode=safe_mode)
+    log_event(
+        os.path.dirname(path),
+        "supervisor_snapshot_updated",
+        {
+            "status": saved["status"],
+            "final_threshold_ready": bool(saved.get("final_threshold_ready")),
+            "hidden_reader_risk_trend": float(saved.get("hidden_reader_risk_trend", 0.0) or 0.0),
+            "reader_risk_trend_priority": saved.get("reader_risk_trend_priority"),
+            "failed_bundles": list(saved.get("failed_bundles", []) or []),
+        },
+        safe_mode=safe_mode,
+    )
     return saved
 
 
