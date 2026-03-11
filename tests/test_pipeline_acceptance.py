@@ -441,6 +441,7 @@ def test_generate_episode_applies_final_threshold_repairs_to_generation_runtime(
     assert record["generation_runtime_policy"]["causal_repair_retry_budget"] == 3
     assert record["generation_runtime_policy"]["request_timeout_seconds"] == 180
     assert record["generation_runtime_policy"]["mode"] == "priority"
+    assert "hidden_reader_risk_summary" in record["meta"]
     assert captured["draft_story_state"]["market"]["rebind_required"] is True
     assert captured["draft_story_state"]["market"]["runtime_repairs"]["hook_bias"] == pytest.approx(0.12)
 

@@ -50,7 +50,7 @@ from .reliability import (
     summarize_soak_report,
     update_system_status,
 )
-from .runtime_config import load_runtime_config_into_cfg, write_system_status_snapshot
+from .runtime_config import load_runtime_config_into_cfg, summarize_hidden_reader_risk, write_system_status_snapshot
 from analytics.content_ceiling import evaluate_episode
 
 
@@ -971,6 +971,17 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         safe_mode=bool(cfg.get("safe_mode", False)),
         project_dir_for_backup=out_dir,
     )
+    hidden_reader_risk_summary = summarize_hidden_reader_risk()
+    append_jsonl(
+        os.path.join(out_dir, "metrics.jsonl"),
+        {
+            "type": "runtime_hidden_reader_risk_summary",
+            "episode": episode,
+            "summary": hidden_reader_risk_summary,
+        },
+        safe_mode=bool(cfg.get("safe_mode", False)),
+        project_dir_for_backup=out_dir,
+    )
     simulation = simulate_long_run(objective_scores, state.data.get("story_state_v2", {}))
     soak_report = summarize_soak_report(simulation)
     human_quality_lift = estimate_human_quality_lift(
@@ -1002,6 +1013,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     meta["quality_lift_if_human_intervenes"] = human_quality_lift
     meta["soak_history"] = soak_history
     meta["runtime_config"] = runtime_cfg
+    meta["hidden_reader_risk_summary"] = hidden_reader_risk_summary
     meta["final_threshold_repairs_applied"] = runtime_repair_directives
     meta["reader_quality_debt_applied"] = reader_quality_debt_directives
     meta["arc_pressure_applied"] = arc_pressure_directives
