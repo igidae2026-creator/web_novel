@@ -24,7 +24,7 @@ from engine.promise_graph import update_promise_payoff_graph
 from engine.episode_attribution import build_episode_attribution, record_episode_attribution
 from engine.character_arc import update_character_arc
 from engine.causal_attribution import build_scene_event_attribution
-from engine.reliability import detect_axis_drift, detect_quality_drift, record_soak_history, simulate_long_run, update_system_status
+from engine.reliability import detect_axis_drift, detect_quality_drift, record_soak_history, simulate_long_run, summarize_soak_report, update_system_status
 from engine.portfolio_memory import learn_portfolio_snapshot, update_portfolio_memory, portfolio_prompt_payload
 from engine.portfolio_signals import compute_portfolio_signals
 from engine.regression_guard import portfolio_signal_decision, release_policy_decision
@@ -1220,6 +1220,8 @@ def test_long_run_simulation_reports_30_60_120_episode_runs():
     assert set(result["runs"].keys()) == {"30", "60", "120"}
     assert result["runs"]["120"]["episodes"] == 120
     assert result["runs"]["30"]["mean_balanced_total"] > 0.0
+    assert result["runs"]["30"]["heavy_reader_signal_mean"] > 0.0
+    assert result["runs"]["30"]["heavy_reader_signal_floor"] > 0.0
 
 
 def test_system_status_records_iteration_history_and_portfolio_signals():
@@ -1286,6 +1288,33 @@ def test_record_soak_history_accumulates_stability_signal():
     assert second["history"][-1]["hidden_reader_risk"] > 0.0
     assert second["history"][-1]["heavy_reader_signal"] > 0.0
     assert state["story_state_v2"]["control"]["soak_history"]["history"][-1]["episode"] == 2
+
+
+def test_summarize_soak_report_includes_heavy_reader_signal_floor():
+    simulation = {
+        "runs": {
+            "30": {
+                "drift": {"drift_detected": False},
+                "repair_rate_mean": 0.81,
+                "min_balanced_total": 0.74,
+                "heavy_reader_signal_floor": 0.73,
+                "heavy_reader_signal_drift": {"drift_detected": False},
+            },
+            "60": {
+                "drift": {"drift_detected": False},
+                "repair_rate_mean": 0.79,
+                "min_balanced_total": 0.72,
+                "heavy_reader_signal_floor": 0.71,
+                "heavy_reader_signal_drift": {"drift_detected": False},
+            },
+        }
+    }
+
+    report = summarize_soak_report(simulation)
+
+    assert report["tested"] is True
+    assert report["heavy_reader_signal_floor_mean"] >= 0.72
+    assert report["heavy_reader_drift_free_run_ratio"] == 1.0
 
 
 def test_reward_and_character_updates_accumulate_arc_pressure():
@@ -1416,6 +1445,7 @@ def test_runtime_dashboard_helpers_read_metrics_and_latest_episodes():
                         "autonomous_convergence_trend": {
                             "details": {
                                 "hidden_reader_risk_trend": 0.41,
+                                "heavy_reader_signal_trend": 0.63,
                             }
                         }
                     },
@@ -1433,4 +1463,6 @@ def test_runtime_dashboard_helpers_read_metrics_and_latest_episodes():
         assert latest[0]["name"] == "episode_001.txt"
         assert metrics[0]["episode"] == 2
         assert hidden_risk_summary["critical_tracks"] == 1
+        assert hidden_risk_summary["weak_signal_tracks"] == 1
         assert hidden_risk_summary["tracks"][0]["hidden_reader_risk_trend"] == 0.41
+        assert hidden_risk_summary["tracks"][0]["heavy_reader_signal_trend"] == 0.63

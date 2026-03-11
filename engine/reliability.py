@@ -192,9 +192,11 @@ def simulate_long_run(
     coordination_health = int(portfolio_memory.get("coordination_health", 5) or 5)
     payoff_integrity = float(promise_graph.get("payoff_integrity", 0.5) or 0.5)
     closure_score = float(repair.get("closure_score", 0.5) or 0.5)
+    heavy_reader_baseline = _heavy_reader_signal(objective_scores, story_state)
     for horizon in horizons:
         history: List[float] = []
         repair_rate_history: List[float] = []
+        heavy_reader_signal_history: List[float] = []
         for episode in range(1, int(horizon) + 1):
             cycle = ((episode - 1) % 6) / 10.0
             quality = _clamp(
@@ -206,9 +208,18 @@ def simulate_long_run(
                 - cycle * 0.018
             )
             repair_rate = _clamp(0.76 + closure_score * 0.12 - cycle * 0.08)
+            heavy_reader_signal = _clamp(
+                heavy_reader_baseline
+                + (release_guard / 10.0) * 0.02
+                + (coordination_health / 10.0) * 0.016
+                + payoff_integrity * 0.01
+                - cycle * 0.02
+            )
             history.append(round(quality, 4))
             repair_rate_history.append(round(repair_rate, 4))
+            heavy_reader_signal_history.append(round(heavy_reader_signal, 4))
         drift = detect_quality_drift(history, lookback=min(8, max(4, int(horizon) // 10)))
+        heavy_reader_drift = detect_quality_drift(heavy_reader_signal_history, lookback=min(8, max(4, int(horizon) // 10)), warning_drop=0.03, rollback_drop=0.06)
         simulation_runs[str(horizon)] = {
             "episodes": int(horizon),
             "balanced_total_history": history,
@@ -216,9 +227,17 @@ def simulate_long_run(
             "mean_balanced_total": round(_mean(history), 4),
             "min_balanced_total": min(history),
             "repair_rate_mean": round(_mean(repair_rate_history), 4),
+            "heavy_reader_signal_history": heavy_reader_signal_history,
+            "heavy_reader_signal_mean": round(_mean(heavy_reader_signal_history), 4),
+            "heavy_reader_signal_floor": min(heavy_reader_signal_history),
+            "heavy_reader_signal_drift": heavy_reader_drift,
             "drift": drift,
         }
-    return {"baseline_balanced_total": round(base_profile["balanced_total"], 4), "runs": simulation_runs}
+    return {
+        "baseline_balanced_total": round(base_profile["balanced_total"], 4),
+        "baseline_heavy_reader_signal": round(heavy_reader_baseline, 4),
+        "runs": simulation_runs,
+    }
 
 
 def summarize_soak_report(simulation: Dict[str, Any]) -> Dict[str, Any]:
@@ -228,12 +247,23 @@ def summarize_soak_report(simulation: Dict[str, Any]) -> Dict[str, Any]:
     drift_flags = []
     repair_rates = []
     balanced_floors = []
+    heavy_reader_floors = []
+    heavy_reader_drift_flags = []
     for run in runs.values():
         drift = dict(run.get("drift", {}) or {})
+        heavy_reader_drift = dict(run.get("heavy_reader_signal_drift", {}) or {})
         drift_flags.append(0.0 if drift.get("drift_detected") else 1.0)
+        heavy_reader_drift_flags.append(0.0 if heavy_reader_drift.get("drift_detected") else 1.0)
         repair_rates.append(float(run.get("repair_rate_mean", 0.0) or 0.0))
         balanced_floors.append(float(run.get("min_balanced_total", 0.0) or 0.0))
-    steady_noop_ratio = _clamp(_mean(drift_flags) * 0.6 + _mean(repair_rates) * 0.25 + _mean(balanced_floors) * 0.15)
+        heavy_reader_floors.append(float(run.get("heavy_reader_signal_floor", 0.0) or 0.0))
+    steady_noop_ratio = _clamp(
+        _mean(drift_flags) * 0.45
+        + _mean(repair_rates) * 0.2
+        + _mean(balanced_floors) * 0.15
+        + _mean(heavy_reader_drift_flags) * 0.1
+        + _mean(heavy_reader_floors) * 0.1
+    )
     dominant_mode = "steady" if steady_noop_ratio >= 0.72 else "noop" if steady_noop_ratio >= 0.5 else "volatile"
     return {
         "tested": True,
@@ -243,6 +273,8 @@ def summarize_soak_report(simulation: Dict[str, Any]) -> Dict[str, Any]:
         "drift_free_run_ratio": round(_mean(drift_flags), 4),
         "repair_rate_mean": round(_mean(repair_rates), 4),
         "balanced_floor_mean": round(_mean(balanced_floors), 4),
+        "heavy_reader_signal_floor_mean": round(_mean(heavy_reader_floors), 4),
+        "heavy_reader_drift_free_run_ratio": round(_mean(heavy_reader_drift_flags), 4),
     }
 
 

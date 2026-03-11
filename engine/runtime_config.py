@@ -277,7 +277,13 @@ def summarize_hidden_reader_risk(
     tracks_root: str = os.path.join("domains", "webnovel", "tracks"),
     limit: int = 5,
 ) -> Dict[str, Any]:
-    summary: Dict[str, Any] = {"tracks": [], "mean_hidden_reader_risk_trend": 0.0, "critical_tracks": 0}
+    summary: Dict[str, Any] = {
+        "tracks": [],
+        "mean_hidden_reader_risk_trend": 0.0,
+        "mean_heavy_reader_signal_trend": 0.0,
+        "critical_tracks": 0,
+        "weak_signal_tracks": 0,
+    }
     if not tracks_root or not os.path.isdir(tracks_root):
         return summary
     rows: List[Dict[str, Any]] = []
@@ -288,10 +294,12 @@ def summarize_hidden_reader_risk(
         payload = read_json_file(final_path)
         details = dict((((payload.get("criteria", {}) or {}).get("autonomous_convergence_trend", {}) or {}).get("details", {}) or {}))
         hidden_reader_risk_trend = float(details.get("hidden_reader_risk_trend", (payload.get("threshold_history", {}) or {}).get("hidden_reader_risk_trend", 0.0)) or 0.0)
+        heavy_reader_signal_trend = float(details.get("heavy_reader_signal_trend", (payload.get("threshold_history", {}) or {}).get("heavy_reader_signal_trend", 0.0)) or 0.0)
         rows.append(
             {
                 "track": name,
                 "hidden_reader_risk_trend": round(hidden_reader_risk_trend, 4),
+                "heavy_reader_signal_trend": round(heavy_reader_signal_trend, 4),
                 "final_threshold_ready": bool(payload.get("final_threshold_ready")),
                 "failed_bundles": list(payload.get("failed_bundles", []) or []),
             }
@@ -304,5 +312,10 @@ def summarize_hidden_reader_risk(
         sum(float(item.get("hidden_reader_risk_trend", 0.0) or 0.0) for item in rows) / len(rows),
         4,
     )
+    summary["mean_heavy_reader_signal_trend"] = round(
+        sum(float(item.get("heavy_reader_signal_trend", 0.0) or 0.0) for item in rows) / len(rows),
+        4,
+    )
     summary["critical_tracks"] = sum(1 for item in rows if float(item.get("hidden_reader_risk_trend", 0.0) or 0.0) >= 0.35)
+    summary["weak_signal_tracks"] = sum(1 for item in rows if 0.0 < float(item.get("heavy_reader_signal_trend", 0.0) or 0.0) < 0.72)
     return summary
