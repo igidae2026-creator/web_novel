@@ -37,15 +37,20 @@ def test_generate_tracks_bootstraps_subengine_from_hidden_reader_risk_profile(tm
                         }
                     }
                 },
+                "autonomous_convergence_trend": {
+                    "details": {
+                        "hidden_reader_risk_trend": 0.21,
+                    }
+                },
             }
         },
     )
 
     created = generate_tracks(str(tmp_path), "bootstrap-project", platforms=["Munpia"], buckets=["A"])
 
-    assert created[0]["hidden_reader_risk"] >= 0.5
+    assert created[0]["hidden_reader_risk"] >= 0.7
     track_json = json.load(open(tracks_root / "munpia_a" / "track.json", "r", encoding="utf-8"))
     assert track_json["project"]["sub_engine"] != "AUTO"
     assert track_json["project"]["sub_engine"] == created[0]["sub_engine"]
     assert track_json["project"]["bootstrap_design_guardrails"]
-    assert track_json["bootstrap_strategy"]["hidden_reader_risk"] >= 0.5
+    assert track_json["bootstrap_strategy"]["hidden_reader_risk"] >= 0.7

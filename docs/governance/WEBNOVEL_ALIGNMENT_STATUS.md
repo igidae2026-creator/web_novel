@@ -72,6 +72,7 @@ Until Layer 3 is rewritten through the patch method for this repository, use the
 - new track bootstrap now also reads platform/bucket-level hidden reader-risk history, selecting a guarded initial sub-engine and bootstrap design guardrails instead of always starting from the same default setup
 - soak-history accumulation now records `hidden_reader_risk_trend`, so long unattended runs cannot count as convergence if they stay steady while thinness/repetition/deja-vu/fake-urgency/compression debt remains structurally high
 - `autonomous_convergence_trend` now requires both low human-lift and low hidden reader-risk trend, so "quietly repetitive but operationally stable" output no longer qualifies as conservative-100 progress
+- portfolio runtime scoring and new-track bootstrap now also consume hidden reader-risk trend, so long-run repetitive pressure can suppress boost-readiness and harden first-pass design guardrails even when the latest episode slice looks temporarily healthy
 
 ## Conservative Completion Estimate
 

@@ -688,6 +688,44 @@ def test_portfolio_runtime_snapshot_feeds_memory_learning():
         assert any("실로그상 성과" in directive for directive in memory["policy_directives"])
 
 
+def test_portfolio_runtime_snapshot_penalizes_hidden_reader_risk_trend():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        tdir = os.path.join(tracks_root, "track_a")
+        os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+        with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+            json.dump({"project": {"platform": "Munpia", "genre_bucket": "B"}}, f)
+        with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+            for _ in range(3):
+                f.write(json.dumps({
+                    "meta": {"event_plan": {"type": "arrival"}},
+                    "content_ceiling": {"ceiling_total": 78},
+                    "retention": {"predicted_next_episode": 0.79},
+                    "scores": {"repetition_score": 0.08},
+                }) + "\n")
+        with open(os.path.join(tdir, "outputs", "final_threshold_eval.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "criteria": {
+                        "autonomous_convergence_trend": {
+                            "details": {
+                                "hidden_reader_risk_trend": 0.44,
+                            }
+                        }
+                    }
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        snapshot = build_portfolio_runtime_snapshot(tracks_root)
+
+        assert snapshot["tracks"][0]["hidden_reader_risk"] >= 0.44
+        assert snapshot["boost_ready_tracks"] == 0
+
+
 def test_cross_track_release_scheduler_staggers_platform_overlap():
     with tempfile.TemporaryDirectory() as tmpdir:
         tracks_root = os.path.join(tmpdir, "tracks")

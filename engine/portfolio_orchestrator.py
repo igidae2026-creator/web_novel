@@ -57,6 +57,7 @@ def _track_log_snapshot(track_dir: str, last_n: int = 8) -> Dict[str, Any]:
     threshold_path = os.path.join(track_dir, "outputs", "final_threshold_eval.json")
     threshold_payload = _load_json(threshold_path) if os.path.exists(threshold_path) else {}
     criteria = dict((threshold_payload or {}).get("criteria", {}) or {})
+    threshold_history = dict((threshold_payload or {}).get("threshold_history", {}) or {})
     for criterion_name in ("reader_retention_stability", "serialization_fatigue_control"):
         details = dict((criteria.get(criterion_name) or {}).get("details", {}) or {})
         debt = dict(details.get("reader_quality_debt") or {})
@@ -65,6 +66,7 @@ def _track_log_snapshot(track_dir: str, last_n: int = 8) -> Dict[str, Any]:
                 hidden_reader_risk += float(debt.get(key, 0.0) or 0.0)
             except Exception:
                 continue
+    hidden_reader_risk += _load_hidden_reader_risk_trend(threshold_payload, threshold_history)
     portfolio_score = (
         mean_retention * 0.45
         + (mean_ceiling / 100.0) * 0.40
@@ -79,6 +81,14 @@ def _track_log_snapshot(track_dir: str, last_n: int = 8) -> Dict[str, Any]:
         "hidden_reader_risk": round(hidden_reader_risk, 4),
         "portfolio_score": portfolio_score,
     }
+
+
+def _load_hidden_reader_risk_trend(threshold_payload: Dict[str, Any], threshold_history: Dict[str, Any]) -> float:
+    convergence = dict((threshold_payload.get("criteria", {}) or {}).get("autonomous_convergence_trend", {}) or {})
+    details = dict(convergence.get("details", {}) or {})
+    if "hidden_reader_risk_trend" in details:
+        return max(0.0, float(details.get("hidden_reader_risk_trend", 0.0) or 0.0))
+    return max(0.0, float(threshold_history.get("hidden_reader_risk_trend", 0.0) or 0.0))
 
 
 def build_portfolio_runtime_snapshot(tracks_root: str, last_n: int = 8) -> Dict[str, Any]:

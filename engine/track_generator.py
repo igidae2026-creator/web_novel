@@ -33,12 +33,15 @@ def _hidden_reader_risk_profile(tracks_dir: str) -> Dict[str, float]:
         project = dict(track_cfg.get("project", {}) or {})
         key = f"{project.get('platform', 'UNKNOWN')}::{project.get('genre_bucket', 'X')}"
         criteria = dict(payload.get("criteria", {}) or {})
+        threshold_history = dict(payload.get("threshold_history", {}) or {})
         total = 0.0
         for criterion_name in ("reader_retention_stability", "serialization_fatigue_control"):
             details = dict((criteria.get(criterion_name) or {}).get("details", {}) or {})
             debt = dict(details.get("reader_quality_debt") or {})
             for debt_key in ("thinness_debt", "repetition_debt", "deja_vu_debt", "fake_urgency_debt", "compression_debt"):
                 total += _safe_float(debt.get(debt_key), 0.0)
+        convergence = dict((criteria.get("autonomous_convergence_trend") or {}).get("details", {}) or {})
+        total += _safe_float(convergence.get("hidden_reader_risk_trend"), _safe_float(threshold_history.get("hidden_reader_risk_trend"), 0.0))
         profile.setdefault(key, []).append(round(total, 4))
     return {key: round(sum(values) / len(values), 4) for key, values in profile.items() if values}
 
