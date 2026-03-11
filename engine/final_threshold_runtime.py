@@ -69,6 +69,7 @@ def run_final_threshold_repairs(
     blocked_generation = False
     applied = []
     failed_bundles = _load_failed_bundles(out_dir)
+    hidden_reader_risk_trend = _load_hidden_reader_risk_trend(out_dir)
     high_risk = {
         "append_only_truth_lineage_replayability",
         "metaos_identity_priority",
@@ -111,6 +112,11 @@ def run_final_threshold_repairs(
 
     if any(bundle in CRITICAL_BUNDLES for bundle in failed_bundles):
         blocked_generation = True
+    if hidden_reader_risk_trend >= 0.35:
+        threshold_control["reader_risk_trend_priority"] = "critical" if hidden_reader_risk_trend >= 0.5 else "high"
+        threshold_control["hidden_reader_risk_trend"] = hidden_reader_risk_trend
+    if hidden_reader_risk_trend >= 0.5:
+        blocked_generation = True
     threshold_control["applied"] = applied
     threshold_control["blocked_generation"] = blocked_generation
     threshold_control["failed_bundles"] = failed_bundles
@@ -138,6 +144,7 @@ def run_final_threshold_repairs(
         "blocked_generation": blocked_generation,
         "failed_bundles": failed_bundles,
         "bundle_priority_mode": threshold_control["bundle_priority_mode"],
+        "hidden_reader_risk_trend": hidden_reader_risk_trend,
     }
 
 
@@ -151,6 +158,21 @@ def _load_failed_bundles(out_dir: str) -> list[str]:
     except Exception:
         return []
     return list(payload.get("failed_bundles", []) or [])
+
+
+def _load_hidden_reader_risk_trend(out_dir: str) -> float:
+    path = os.path.join(out_dir, "final_threshold_eval.json")
+    if not os.path.exists(path):
+        return 0.0
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return 0.0
+    details = dict((((payload.get("criteria", {}) or {}).get("autonomous_convergence_trend", {}) or {}).get("details", {}) or {}))
+    if "hidden_reader_risk_trend" in details:
+        return float(details.get("hidden_reader_risk_trend", 0.0) or 0.0)
+    return float((payload.get("threshold_history", {}) or {}).get("hidden_reader_risk_trend", 0.0) or 0.0)
 
 
 def capability_budget_severity(failed_bundles: list[str]) -> str:

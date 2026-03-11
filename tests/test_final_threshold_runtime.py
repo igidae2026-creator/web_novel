@@ -243,6 +243,69 @@ def test_run_final_threshold_repairs_applies_hidden_reader_fatigue_directives(tm
     assert control["compression_bias"] == 0.1
 
 
+def test_run_final_threshold_repairs_blocks_generation_for_high_hidden_reader_risk_trend(tmp_path):
+    track_dir = tmp_path / "domains" / "webnovel" / "tracks" / "track_trend"
+    out_dir = track_dir / "outputs"
+    out_dir.mkdir(parents=True)
+    with open(out_dir / "final_threshold_eval.json", "w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "failed_bundles": [],
+                "criteria": {
+                    "autonomous_convergence_trend": {
+                        "details": {
+                            "hidden_reader_risk_trend": 0.52,
+                        }
+                    }
+                },
+            },
+            handle,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    state = StateStore(str(track_dir / "state.json"), safe_mode=False, project_dir_for_backup=str(out_dir))
+    state.load()
+    queue_path = tmp_path / "job_queue.json"
+    save_job_queue_state(
+        {
+            "queue_status": "paused",
+            "jobs": [
+                {
+                    "job_id": "repair:track_trend:reader_retention_stability",
+                    "job_type": "repair_final_threshold",
+                    "status": "queued",
+                    "priority": 20,
+                    "attempts": 0,
+                    "payload": {
+                        "track_id": "track_trend",
+                        "criterion": "reader_retention_stability",
+                        "repair_action": "repair_reader_retention_stability",
+                    },
+                    "result": None,
+                    "error": None,
+                }
+            ],
+        },
+        path=str(queue_path),
+        safe_mode=False,
+    )
+
+    result = run_final_threshold_repairs(
+        state=state,
+        out_dir=str(out_dir),
+        track_id="track_trend",
+        queue_path=str(queue_path),
+        safe_mode=False,
+    )
+
+    control = state.data["story_state_v2"]["control"]["final_threshold_repairs"]
+    assert result["blocked_generation"] is True
+    assert result["hidden_reader_risk_trend"] == 0.52
+    assert control["reader_risk_trend_priority"] == "critical"
+    assert control["hidden_reader_risk_trend"] == 0.52
+
+
 def test_build_fault_injection_report_marks_recovery_when_replay_is_consistent(tmp_path):
     out_dir = tmp_path / "outputs"
     out_dir.mkdir(parents=True)

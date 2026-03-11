@@ -119,12 +119,14 @@ def load_business_feedback_summary(
 def _hidden_reader_risk_from_state(state: Dict[str, Any]) -> float:
     story_state = dict(state.get("story_state_v2", {}) or {})
     reader_quality = dict((story_state.get("control", {}) or {}).get("reader_quality", {}) or {})
+    threshold_history = dict((story_state.get("control", {}) or {}).get("final_threshold_history", {}) or {})
     total = 0.0
     for key in ("thinness_debt", "repetition_debt", "deja_vu_debt", "fake_urgency_debt", "compression_debt"):
         try:
             total += float(reader_quality.get(key, 0.0) or 0.0)
         except Exception:
             continue
+    total += float(threshold_history.get("hidden_reader_risk_trend", 0.0) or 0.0)
     return round(total, 4)
 
 def certify(cfg: dict, out_dir: str) -> Dict[str, Any]:

@@ -138,3 +138,40 @@ def test_job_queue_prioritizes_reader_quality_repairs_ahead_of_generation(tmp_pa
 
     assert state["jobs"][0]["job_id"] == "repair:track_a:early_hook_strength"
     assert state["jobs"][1]["job_id"] == "track:0"
+
+
+def test_job_queue_prioritizes_hidden_reader_risk_trend_repairs_first(tmp_path):
+    queue_path = tmp_path / "job_queue.json"
+    save_job_queue_state(
+        {
+            "queue_status": "paused",
+            "jobs": [
+                {
+                    "job_id": "repair:track_a:early_hook_strength",
+                    "job_type": "repair_final_threshold",
+                    "status": "queued",
+                    "priority": 40,
+                    "payload": {
+                        "track_id": "track_a",
+                        "repair_context": {"hook_bias": 0.14, "rewrite_pressure": "high"},
+                    },
+                },
+                {
+                    "job_id": "repair:track_a:reader_retention_stability",
+                    "job_type": "repair_final_threshold",
+                    "status": "queued",
+                    "priority": 50,
+                    "payload": {
+                        "track_id": "track_a",
+                        "repair_context": {"hidden_reader_risk_trend": 0.44},
+                    },
+                },
+            ],
+        },
+        path=str(queue_path),
+        safe_mode=False,
+    )
+
+    state = load_job_queue_state(str(queue_path))
+
+    assert state["jobs"][0]["job_id"] == "repair:track_a:reader_retention_stability"
