@@ -33,6 +33,46 @@ def _load_jsonl(path: str) -> List[Dict[str, Any]]:
     return rows
 
 
+def _load_platform_soak_pressure(track_dir: str, last_n: int = 8) -> Dict[str, Any]:
+    rows = _load_jsonl(os.path.join(track_dir, "outputs", "metrics.jsonl"))[-last_n:]
+    reports: List[Dict[str, Any]] = []
+    for row in rows:
+        soak_report = dict(row.get("soak_report") or (row.get("meta", {}) or {}).get("soak_report") or {})
+        if soak_report.get("tested"):
+            reports.append(soak_report)
+    if not reports:
+        return {
+            "tested": False,
+            "steady_noop_ratio": 0.0,
+            "heavy_reader_signal_floor_mean": 0.0,
+            "repair_rate_mean": 0.0,
+            "pressure": 0.0,
+            "dominant_mode": "unknown",
+        }
+    steady_noop_ratio = sum(float(report.get("steady_noop_ratio", 0.0) or 0.0) for report in reports) / len(reports)
+    heavy_reader_signal_floor_mean = sum(float(report.get("heavy_reader_signal_floor_mean", 0.0) or 0.0) for report in reports) / len(reports)
+    repair_rate_mean = sum(float(report.get("repair_rate_mean", 0.0) or 0.0) for report in reports) / len(reports)
+    dominant_mode = str(reports[-1].get("dominant_mode") or "unknown")
+    pressure = max(
+        0.0,
+        min(
+            1.0,
+            max(0.0, 0.76 - steady_noop_ratio) * 0.55
+            + max(0.0, 0.72 - heavy_reader_signal_floor_mean) * 0.9
+            + max(0.0, 0.78 - repair_rate_mean) * 0.35
+            + (0.12 if dominant_mode == "volatile" else 0.05 if dominant_mode == "noop" else 0.0),
+        ),
+    )
+    return {
+        "tested": True,
+        "steady_noop_ratio": round(steady_noop_ratio, 4),
+        "heavy_reader_signal_floor_mean": round(heavy_reader_signal_floor_mean, 4),
+        "repair_rate_mean": round(repair_rate_mean, 4),
+        "pressure": round(pressure, 4),
+        "dominant_mode": dominant_mode,
+    }
+
+
 def _track_log_snapshot(track_dir: str, last_n: int = 8) -> Dict[str, Any]:
     rows = _load_jsonl(os.path.join(track_dir, "outputs", "metrics.jsonl"))[-last_n:]
     if not rows:
@@ -43,6 +83,8 @@ def _track_log_snapshot(track_dir: str, last_n: int = 8) -> Dict[str, Any]:
             "event_crowding": 0,
             "hidden_reader_risk": 0.0,
             "heavy_reader_signal_trend": 0.0,
+            "platform_soak_pressure": 0.0,
+            "platform_soak_summary": {"tested": False, "pressure": 0.0},
             "portfolio_score": 0.0,
         }
     retention = [float((row.get("retention", {}) or {}).get("predicted_next_episode", 0.0) or 0.0) for row in rows]
@@ -69,12 +111,15 @@ def _track_log_snapshot(track_dir: str, last_n: int = 8) -> Dict[str, Any]:
                 continue
     hidden_reader_risk += _load_hidden_reader_risk_trend(threshold_payload, threshold_history)
     heavy_reader_signal_trend = _load_heavy_reader_signal_trend(threshold_payload, threshold_history)
+    soak_summary = _load_platform_soak_pressure(track_dir, last_n=last_n)
+    platform_soak_pressure = float(soak_summary.get("pressure", 0.0) or 0.0)
     portfolio_score = (
         mean_retention * 0.45
         + (mean_ceiling / 100.0) * 0.40
         + max(0.0, 1.0 - fatigue_score) * 0.15
         - min(0.18, hidden_reader_risk * 0.12)
         - min(0.16, max(0.0, 0.72 - heavy_reader_signal_trend) * 0.28)
+        - min(0.14, platform_soak_pressure * 0.22)
     )
     return {
         "mean_ceiling": mean_ceiling,
@@ -83,6 +128,8 @@ def _track_log_snapshot(track_dir: str, last_n: int = 8) -> Dict[str, Any]:
         "event_crowding": event_crowding,
         "hidden_reader_risk": round(hidden_reader_risk, 4),
         "heavy_reader_signal_trend": round(heavy_reader_signal_trend, 4),
+        "platform_soak_pressure": round(platform_soak_pressure, 4),
+        "platform_soak_summary": soak_summary,
         "portfolio_score": portfolio_score,
     }
 
@@ -121,8 +168,8 @@ def build_portfolio_runtime_snapshot(tracks_root: str, last_n: int = 8) -> Dict[
         )
     if not tracks:
         return {"tracks": [], "boost_ready_tracks": 0, "stable_tracks": 0, "mean_portfolio_score": 0.0}
-    boost_ready = sum(1 for track in tracks if track["portfolio_score"] >= 0.68 and track["fatigue_score"] < 0.24 and track.get("hidden_reader_risk", 0.0) < 0.35 and track.get("heavy_reader_signal_trend", 0.0) >= 0.72)
-    stable = sum(1 for track in tracks if track["fatigue_score"] < 0.18 and track["event_crowding"] <= 3 and track.get("hidden_reader_risk", 0.0) < 0.3 and track.get("heavy_reader_signal_trend", 0.0) >= 0.72)
+    boost_ready = sum(1 for track in tracks if track["portfolio_score"] >= 0.68 and track["fatigue_score"] < 0.24 and track.get("hidden_reader_risk", 0.0) < 0.35 and track.get("heavy_reader_signal_trend", 0.0) >= 0.72 and track.get("platform_soak_pressure", 0.0) < 0.28)
+    stable = sum(1 for track in tracks if track["fatigue_score"] < 0.18 and track["event_crowding"] <= 3 and track.get("hidden_reader_risk", 0.0) < 0.3 and track.get("heavy_reader_signal_trend", 0.0) >= 0.72 and track.get("platform_soak_pressure", 0.0) < 0.24)
     mean_score = sum(float(track["portfolio_score"]) for track in tracks) / len(tracks)
     return {
         "tracks": tracks,

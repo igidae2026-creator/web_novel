@@ -121,6 +121,67 @@ def _heavy_reader_signal_trend_summary(track_dirs: list[str]) -> Dict[str, Any]:
     }
 
 
+def _platform_soak_stress_summary(track_dirs: list[str]) -> Dict[str, Any]:
+    values = []
+    critical_tracks = []
+    caution_tracks = []
+    for track_dir in track_dirs:
+        metrics_path = os.path.join(track_dir, "outputs", "metrics.jsonl")
+        if not os.path.exists(metrics_path):
+            continue
+        try:
+            with open(metrics_path, "r", encoding="utf-8") as handle:
+                rows = [json.loads(line) for line in handle if line.strip()]
+        except Exception:
+            continue
+        reports = []
+        for row in rows[-8:]:
+            soak_report = dict(row.get("soak_report") or (row.get("meta", {}) or {}).get("soak_report") or {})
+            if soak_report.get("tested"):
+                reports.append(soak_report)
+        if not reports:
+            continue
+        steady_noop_ratio = sum(float(report.get("steady_noop_ratio", 0.0) or 0.0) for report in reports) / len(reports)
+        heavy_reader_signal_floor_mean = sum(float(report.get("heavy_reader_signal_floor_mean", 0.0) or 0.0) for report in reports) / len(reports)
+        repair_rate_mean = sum(float(report.get("repair_rate_mean", 0.0) or 0.0) for report in reports) / len(reports)
+        dominant_mode = str(reports[-1].get("dominant_mode") or "unknown")
+        pressure = max(
+            0.0,
+            min(
+                1.0,
+                max(0.0, 0.76 - steady_noop_ratio) * 0.55
+                + max(0.0, 0.72 - heavy_reader_signal_floor_mean) * 0.95
+                + max(0.0, 0.78 - repair_rate_mean) * 0.35
+                + (0.12 if dominant_mode == "volatile" else 0.05 if dominant_mode == "noop" else 0.0),
+            ),
+        )
+        track_id = os.path.basename(track_dir.rstrip(os.sep)) or track_dir
+        values.append({"track": track_id, "pressure": round(pressure, 4)})
+        if pressure >= 0.34:
+            critical_tracks.append(track_id)
+        elif pressure >= 0.22:
+            caution_tracks.append(track_id)
+    if not values:
+        return {
+            "track_count": 0,
+            "mean": 0.0,
+            "max": 0.0,
+            "critical_tracks": [],
+            "caution_tracks": [],
+            "top_tracks": [],
+        }
+    ordered = sorted(values, key=lambda item: (-float(item.get("pressure", 0.0) or 0.0), str(item.get("track") or "")))
+    pressures = [float(item["pressure"]) for item in ordered]
+    return {
+        "track_count": len(ordered),
+        "mean": round(sum(pressures) / len(pressures), 4),
+        "max": round(max(pressures), 4),
+        "critical_tracks": critical_tracks[:5],
+        "caution_tracks": caution_tracks[:5],
+        "top_tracks": ordered[:3],
+    }
+
+
 def _queue_bundle_severity(track_dirs: list[str]) -> str:
     severities = []
     for track_dir in track_dirs:
@@ -169,6 +230,37 @@ def _queue_bundle_severity(track_dirs: list[str]) -> str:
             severities.append("critical")
         elif hidden_reader_risk_trend >= 0.35:
             severities.append("caution")
+        metrics_path = os.path.join(track_dir, "outputs", "metrics.jsonl")
+        if os.path.exists(metrics_path):
+            try:
+                with open(metrics_path, "r", encoding="utf-8") as handle:
+                    rows = [json.loads(line) for line in handle if line.strip()]
+            except Exception:
+                rows = []
+            reports = []
+            for row in rows[-8:]:
+                soak_report = dict(row.get("soak_report") or (row.get("meta", {}) or {}).get("soak_report") or {})
+                if soak_report.get("tested"):
+                    reports.append(soak_report)
+            if reports:
+                steady_noop_ratio = sum(float(report.get("steady_noop_ratio", 0.0) or 0.0) for report in reports) / len(reports)
+                heavy_reader_signal_floor_mean = sum(float(report.get("heavy_reader_signal_floor_mean", 0.0) or 0.0) for report in reports) / len(reports)
+                repair_rate_mean = sum(float(report.get("repair_rate_mean", 0.0) or 0.0) for report in reports) / len(reports)
+                dominant_mode = str(reports[-1].get("dominant_mode") or "unknown")
+                platform_soak_pressure = max(
+                    0.0,
+                    min(
+                        1.0,
+                        max(0.0, 0.76 - steady_noop_ratio) * 0.55
+                        + max(0.0, 0.72 - heavy_reader_signal_floor_mean) * 0.95
+                        + max(0.0, 0.78 - repair_rate_mean) * 0.35
+                        + (0.12 if dominant_mode == "volatile" else 0.05 if dominant_mode == "noop" else 0.0),
+                    ),
+                )
+                if platform_soak_pressure >= 0.34:
+                    severities.append("critical")
+                elif platform_soak_pressure >= 0.22:
+                    severities.append("caution")
     if "critical" in severities:
         return "critical"
     if "caution" in severities:
@@ -250,6 +342,7 @@ def run_queue_loop(cfg: Dict[str, Any], max_steps: int = 1) -> Tuple[bool, str]:
         severity = _queue_bundle_severity(track_dirs)
         hidden_reader_risk_summary = _hidden_reader_risk_trend_summary(track_dirs)
         heavy_reader_signal_summary = _heavy_reader_signal_trend_summary(track_dirs)
+        platform_soak_summary = _platform_soak_stress_summary(track_dirs)
         generation_cap = capability_generation_cap(runtime_cfg, severity)
         steps_budget = min(max(1, int(max_steps)), max(0, generation_cap))
         h["bundle_budgeting"] = {
@@ -258,6 +351,7 @@ def run_queue_loop(cfg: Dict[str, Any], max_steps: int = 1) -> Tuple[bool, str]:
             "requested_steps": int(max_steps),
             "hidden_reader_risk_trend_summary": hidden_reader_risk_summary,
             "heavy_reader_signal_trend_summary": heavy_reader_signal_summary,
+            "platform_soak_summary": platform_soak_summary,
         }
         if steps_budget <= 0:
             queued_repairs = _ensure_queue_repair_work(track_dirs)
@@ -268,6 +362,8 @@ def run_queue_loop(cfg: Dict[str, Any], max_steps: int = 1) -> Tuple[bool, str]:
                 h["last_msg"] += f"; hidden_reader_risk_trend_max={hidden_reader_risk_summary['max']}"
             if heavy_reader_signal_summary.get("min", 0.0):
                 h["last_msg"] += f"; heavy_reader_signal_trend_min={heavy_reader_signal_summary['min']}"
+            if platform_soak_summary.get("max", 0.0):
+                h["last_msg"] += f"; platform_soak_pressure_max={platform_soak_summary['max']}"
             if severity == "critical":
                 q0["status"] = "blocked"
             elif severity == "caution" and q0.get("status") == "running":

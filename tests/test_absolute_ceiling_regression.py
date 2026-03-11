@@ -778,6 +778,34 @@ def test_portfolio_runtime_snapshot_penalizes_low_heavy_reader_signal_trend():
         assert snapshot["boost_ready_tracks"] == 0
 
 
+def test_portfolio_runtime_snapshot_penalizes_platform_soak_stress():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        track_dir = os.path.join(tracks_root, "track_platform")
+        os.makedirs(os.path.join(track_dir, "outputs"), exist_ok=True)
+        with open(os.path.join(track_dir, "track.json"), "w", encoding="utf-8") as f:
+            json.dump({"project": {"platform": "Munpia", "genre_bucket": "A"}}, f)
+        with open(os.path.join(track_dir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+            for _ in range(3):
+                f.write(json.dumps({
+                    "retention": {"predicted_next_episode": 0.82},
+                    "content_ceiling": {"ceiling_total": 79},
+                    "scores": {"repetition_score": 0.07},
+                    "soak_report": {
+                        "tested": True,
+                        "steady_noop_ratio": 0.58,
+                        "dominant_mode": "volatile",
+                        "repair_rate_mean": 0.69,
+                        "heavy_reader_signal_floor_mean": 0.54,
+                    },
+                }) + "\n")
+
+        snapshot = build_portfolio_runtime_snapshot(tracks_root)
+
+        assert snapshot["tracks"][0]["platform_soak_pressure"] >= 0.34
+        assert snapshot["boost_ready_tracks"] == 0
+
+
 def test_cross_track_release_scheduler_staggers_platform_overlap():
     with tempfile.TemporaryDirectory() as tmpdir:
         tracks_root = os.path.join(tmpdir, "tracks")
@@ -881,6 +909,34 @@ def test_cross_track_release_holds_when_heavy_reader_signal_trend_is_low():
         assert plan["release_plan"][0]["action"] == "hold"
         assert plan["release_plan"][0]["heavy_reader_signal_trend"] == 0.59
         assert any("상위독자 체감 압력" in directive for directive in plan["policy_directives"])
+
+
+def test_cross_track_release_holds_when_platform_soak_pressure_is_high():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        tdir = os.path.join(tracks_root, "track_soak")
+        os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+        with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+            json.dump({"project": {"platform": "Munpia", "genre_bucket": "A"}}, f)
+        with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+            for _ in range(3):
+                f.write(json.dumps({
+                    "retention": {"predicted_next_episode": 0.79},
+                    "scores": {"repetition_score": 0.1},
+                    "soak_report": {
+                        "tested": True,
+                        "steady_noop_ratio": 0.57,
+                        "dominant_mode": "volatile",
+                        "repair_rate_mean": 0.68,
+                        "heavy_reader_signal_floor_mean": 0.53,
+                    },
+                }) + "\n")
+
+        plan = build_cross_track_release_plan(tracks_root)
+
+        assert plan["release_plan"][0]["action"] == "hold"
+        assert plan["release_plan"][0]["platform_soak_pressure"] >= 0.34
+        assert any("플랫폼 스트레스 soak" in directive for directive in plan["policy_directives"])
 
 
 def test_platform_release_policy_respects_slot_pressure():
@@ -1002,6 +1058,35 @@ def test_release_runtime_meta_carries_hidden_reader_risk_summary():
         assert hidden_summary["max"] >= 0.42
         assert hidden_summary["top_tracks"][0]["track"] == "track_alpha"
         assert hidden_summary["top_tracks"][0]["action"] == "hold"
+
+
+def test_release_runtime_meta_carries_platform_soak_summary():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        tdir = os.path.join(tracks_root, "track_beta")
+        os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+        with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+            json.dump({"project": {"platform": "Munpia", "genre_bucket": "B"}}, f)
+        with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "retention": {"predicted_next_episode": 0.72},
+                "scores": {"repetition_score": 0.14},
+                "soak_report": {
+                    "tested": True,
+                    "steady_noop_ratio": 0.58,
+                    "dominant_mode": "volatile",
+                    "repair_rate_mean": 0.67,
+                    "heavy_reader_signal_floor_mean": 0.52,
+                },
+            }) + "\n")
+
+        queue_state = refresh_queue_release_runtime({"status": "running", "track_dirs": [tdir], "current_index": 0}, tracks_root)
+
+        soak_summary = queue_state["release_runtime_meta"]["platform_soak_summary"]
+        assert soak_summary["track_count"] == 1
+        assert soak_summary["max"] >= 0.34
+        assert soak_summary["top_tracks"][0]["track"] == "track_beta"
 
 
 def test_runtime_release_alignment_updates_story_state():

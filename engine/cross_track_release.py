@@ -86,6 +86,42 @@ def _track_heavy_reader_signal_trend(track_dir: str) -> float:
     return 1.0
 
 
+def _track_platform_soak_pressure(track_dir: str, last_n: int = 8) -> Dict[str, Any]:
+    rows = _load_jsonl(os.path.join(track_dir, "outputs", "metrics.jsonl"))[-last_n:]
+    reports: List[Dict[str, Any]] = []
+    for row in rows:
+        soak_report = dict(row.get("soak_report") or (row.get("meta", {}) or {}).get("soak_report") or {})
+        if soak_report.get("tested"):
+            reports.append(soak_report)
+    if not reports:
+        return {
+            "tested": False,
+            "steady_noop_ratio": 0.0,
+            "heavy_reader_signal_floor_mean": 0.0,
+            "repair_rate_mean": 0.0,
+            "pressure": 0.0,
+            "dominant_mode": "unknown",
+        }
+    steady_noop_ratio = sum(float(report.get("steady_noop_ratio", 0.0) or 0.0) for report in reports) / len(reports)
+    heavy_reader_signal_floor_mean = sum(float(report.get("heavy_reader_signal_floor_mean", 0.0) or 0.0) for report in reports) / len(reports)
+    repair_rate_mean = sum(float(report.get("repair_rate_mean", 0.0) or 0.0) for report in reports) / len(reports)
+    dominant_mode = str(reports[-1].get("dominant_mode") or "unknown")
+    pressure = _clamp(
+        max(0.0, 0.76 - steady_noop_ratio) * 0.55
+        + max(0.0, 0.72 - heavy_reader_signal_floor_mean) * 0.95
+        + max(0.0, 0.78 - repair_rate_mean) * 0.35
+        + (0.12 if dominant_mode == "volatile" else 0.05 if dominant_mode == "noop" else 0.0)
+    )
+    return {
+        "tested": True,
+        "steady_noop_ratio": round(steady_noop_ratio, 4),
+        "heavy_reader_signal_floor_mean": round(heavy_reader_signal_floor_mean, 4),
+        "repair_rate_mean": round(repair_rate_mean, 4),
+        "pressure": round(pressure, 4),
+        "dominant_mode": dominant_mode,
+    }
+
+
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return max(low, min(high, float(value)))
 
@@ -239,6 +275,8 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
             mean_repetition = 0.0
         hidden_reader_risk = _track_hidden_reader_risk(track_dir)
         heavy_reader_signal_trend = _track_heavy_reader_signal_trend(track_dir)
+        platform_soak = _track_platform_soak_pressure(track_dir, last_n=last_n)
+        platform_soak_pressure = float(platform_soak.get("pressure", 0.0) or 0.0)
         adaptive_score = (
             mean_retention * 0.44
             + float(track_learning.get("success", 0.0) or 0.0) * 0.20
@@ -255,6 +293,7 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
             - float(episode_learning.get("fatigue_signal", 0.0) or 0.0) * 0.12
             - min(0.18, hidden_reader_risk * 0.14)
             - min(0.16, max(0.0, 0.72 - heavy_reader_signal_trend) * 0.24)
+            - min(0.16, platform_soak_pressure * 0.3)
             - min(0.35, float(track_learning.get("window_wins", 0.0) or 0.0) * 0.08)
         )
         tracks.append(
@@ -271,6 +310,8 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
                 "market_rhythm": market_rhythm,
                 "hidden_reader_risk": hidden_reader_risk,
                 "heavy_reader_signal_trend": heavy_reader_signal_trend,
+                "platform_soak_pressure": round(platform_soak_pressure, 4),
+                "platform_soak_summary": platform_soak,
             }
         )
     tracks.sort(key=lambda item: (item["platform"], -item["adaptive_score"], -item["mean_retention"], item["fatigue"], item["track"]))
@@ -294,9 +335,12 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
         episode_fatigue = float((track.get("episode_learning", {}) or {}).get("fatigue_signal", 0.0) or 0.0)
         hidden_reader_risk = float(track.get("hidden_reader_risk", 0.0) or 0.0)
         heavy_reader_signal_trend = float(track.get("heavy_reader_signal_trend", 0.0) or 0.0)
+        platform_soak_pressure = float(track.get("platform_soak_pressure", 0.0) or 0.0)
         reserved_window = int(reservation_map.get(str(track.get("track")), 0) or 0)
-        if hidden_reader_risk >= 0.42 or (0.0 < heavy_reader_signal_trend < 0.62):
+        if hidden_reader_risk >= 0.42 or (0.0 < heavy_reader_signal_trend < 0.62) or platform_soak_pressure >= 0.34:
             action = "hold"
+        elif platform_soak_pressure >= 0.22:
+            action = "stagger"
         elif track["fatigue"] + learned_fatigue * 0.25 + episode_fatigue * 0.15 >= float(policy.get("fatigue_limit", 0.20) or 0.20):
             action = "hold"
         elif reserved_window >= 2:
@@ -327,6 +371,7 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
                 "market_rhythm": dict(track.get("market_rhythm", {}) or {}),
                 "hidden_reader_risk": hidden_reader_risk,
                 "heavy_reader_signal_trend": heavy_reader_signal_trend,
+                "platform_soak_pressure": round(platform_soak_pressure, 4),
                 "reserved_window": reserved_window,
             }
         )
@@ -344,6 +389,10 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
                 policy_directives.append(directive)
         if 0.0 < heavy_reader_signal_trend < 0.62:
             directive = f"{platform}에서는 상위독자 체감 압력이 낮은 트랙을 가속하지 않고 홀드 또는 재배치한다"
+            if directive not in policy_directives:
+                policy_directives.append(directive)
+        if platform_soak_pressure >= 0.22:
+            directive = f"{platform}에서는 플랫폼 스트레스 soak가 약한 트랙을 가속하지 않고 cadence를 늦춘다"
             if directive not in policy_directives:
                 policy_directives.append(directive)
         if monopoly_risk >= 2.2:
@@ -368,6 +417,8 @@ def refresh_queue_release_runtime(queue_state: Dict[str, Any], tracks_root: str)
     runtime: Dict[str, Dict[str, Any]] = {}
     hidden_reader_risk_values: List[float] = []
     hidden_reader_risk_tracks: List[Dict[str, Any]] = []
+    platform_soak_values: List[float] = []
+    platform_soak_tracks: List[Dict[str, Any]] = []
     for item in plan.get("release_plan", []) or []:
         hidden_reader_risk = float(item.get("hidden_reader_risk", 0.0) or 0.0)
         if hidden_reader_risk > 0.0:
@@ -376,6 +427,16 @@ def refresh_queue_release_runtime(queue_state: Dict[str, Any], tracks_root: str)
                 {
                     "track": str(item.get("track") or ""),
                     "hidden_reader_risk": round(hidden_reader_risk, 4),
+                    "action": str(item.get("action", "stagger") or "stagger"),
+                }
+            )
+        platform_soak_pressure = float(item.get("platform_soak_pressure", 0.0) or 0.0)
+        if platform_soak_pressure > 0.0:
+            platform_soak_values.append(platform_soak_pressure)
+            platform_soak_tracks.append(
+                {
+                    "track": str(item.get("track") or ""),
+                    "platform_soak_pressure": round(platform_soak_pressure, 4),
                     "action": str(item.get("action", "stagger") or "stagger"),
                 }
             )
@@ -397,6 +458,12 @@ def refresh_queue_release_runtime(queue_state: Dict[str, Any], tracks_root: str)
         "interference_pressure": int(plan.get("interference_pressure", 0) or 0),
         "platform_clusters": dict(plan.get("platform_clusters", {}) or {}),
         "hidden_reader_risk_summary": hidden_reader_risk_summary,
+        "platform_soak_summary": {
+            "track_count": len(platform_soak_tracks),
+            "mean": round(sum(platform_soak_values) / len(platform_soak_values), 4) if platform_soak_values else 0.0,
+            "max": round(max(platform_soak_values), 4) if platform_soak_values else 0.0,
+            "top_tracks": sorted(platform_soak_tracks, key=lambda item: (-float(item.get("platform_soak_pressure", 0.0) or 0.0), str(item.get("track") or "")))[:3],
+        },
     }
     return queue_state
 

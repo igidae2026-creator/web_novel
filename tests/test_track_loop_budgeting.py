@@ -264,3 +264,57 @@ def test_run_queue_loop_blocks_for_hidden_reader_risk_trend_pressure(tmp_path, m
     signal_summary = history["bundle_budgeting"]["heavy_reader_signal_trend_summary"]
     assert signal_summary["min"] == 0.58
     assert signal_summary["weakest_tracks"][0]["track"] == "track_trend"
+
+
+def test_run_queue_loop_blocks_for_platform_soak_pressure(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    track_dir = tmp_path / "domains" / "webnovel" / "tracks" / "track_soak"
+    _write_json(track_dir / "track.json", {"project": {"platform": "Munpia", "genre_bucket": "A"}})
+    _write_json(track_dir / "outputs" / "final_threshold_eval.json", {"failed_bundles": [], "failed_criteria": [], "next_required_repairs": []})
+    os.makedirs(track_dir / "outputs", exist_ok=True)
+    with open(track_dir / "outputs" / "metrics.jsonl", "w", encoding="utf-8") as handle:
+        handle.write(json.dumps({
+            "soak_report": {
+                "tested": True,
+                "steady_noop_ratio": 0.57,
+                "dominant_mode": "volatile",
+                "repair_rate_mean": 0.68,
+                "heavy_reader_signal_floor_mean": 0.53,
+            }
+        }, ensure_ascii=False) + "\n")
+    save_queue_state(
+        {
+            "status": "running",
+            "track_dirs": [str(track_dir)],
+            "current_index": 0,
+            "last_error": None,
+        },
+        path=str(tmp_path / "domains" / "webnovel" / "tracks" / "queue_state.json"),
+    )
+    _write_json(
+        tmp_path / "runtime_config.json",
+        {
+            "generation_enabled": True,
+            "portfolio": {
+                "bundle_budgeting": {
+                    "enabled": True,
+                    "critical_generation_cap": 0,
+                    "caution_generation_cap": 1,
+                    "stable_generation_cap": 3,
+                }
+            },
+        },
+    )
+
+    ok, msg = run_queue_loop({"safe_mode": True}, max_steps=1)
+
+    assert ok is False
+    assert "Generation budget exhausted" in msg
+    assert "platform_soak_pressure_max=" in msg
+    track_queue_state = load_queue_state()
+    assert track_queue_state["status"] == "blocked"
+    assert track_queue_state["bundle_budgeting"]["platform_soak_summary"]["max"] >= 0.34
+    history = json.loads((tmp_path / "domains" / "webnovel" / "tracks" / "queue_history.json").read_text(encoding="utf-8"))
+    soak_summary = history["bundle_budgeting"]["platform_soak_summary"]
+    assert soak_summary["max"] >= 0.34
+    assert soak_summary["top_tracks"][0]["track"] == "track_soak"
