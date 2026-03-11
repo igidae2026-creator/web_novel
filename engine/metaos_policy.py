@@ -29,6 +29,7 @@ def classify_material_for_scope(material: Dict[str, Any]) -> Dict[str, Any]:
     hidden_reader_risk = _bounded_score(metadata.get("hidden_reader_risk"))
     hidden_reader_risk_trend = _bounded_score(metadata.get("hidden_reader_risk_trend"))
     heavy_reader_signal_trend = _bounded_score(metadata.get("heavy_reader_signal_trend"), default=1.0)
+    platform_soak_pressure = _bounded_score(metadata.get("platform_soak_pressure"))
     material_id = str(material.get("material_id") or "unknown_material")
 
     if risk >= 0.9:
@@ -37,6 +38,8 @@ def classify_material_for_scope(material: Dict[str, Any]) -> Dict[str, Any]:
         return {"verdict": "hold", "reason": "hidden_reader_risk_trend_requires_hold", "material_id": material_id, "priority": 35}
     if 0.0 < heavy_reader_signal_trend < 0.62:
         return {"verdict": "hold", "reason": "heavy_reader_signal_trend_requires_hold", "material_id": material_id, "priority": 34}
+    if platform_soak_pressure >= 0.34:
+        return {"verdict": "hold", "reason": "platform_soak_pressure_requires_hold", "material_id": material_id, "priority": 33}
     if hidden_reader_risk >= 0.35:
         return {"verdict": "hold", "reason": "hidden_reader_risk_requires_hold", "material_id": material_id, "priority": 40}
     if quality >= 0.82 and scope_fit >= 0.78 and risk <= 0.35:
@@ -57,6 +60,7 @@ def classify_artifact_for_promotion(artifact: Dict[str, Any]) -> Dict[str, Any]:
     hidden_reader_risk = _bounded_score(metadata.get("hidden_reader_risk"))
     hidden_reader_risk_trend = _bounded_score(metadata.get("hidden_reader_risk_trend"))
     heavy_reader_signal_trend = _bounded_score(metadata.get("heavy_reader_signal_trend"), default=1.0)
+    platform_soak_pressure = _bounded_score(metadata.get("platform_soak_pressure"))
     artifact_id = str(artifact.get("artifact_id") or "unknown_artifact")
 
     if risk >= 0.9:
@@ -65,6 +69,8 @@ def classify_artifact_for_promotion(artifact: Dict[str, Any]) -> Dict[str, Any]:
         return {"verdict": "hold", "reason": "hidden_reader_risk_trend_requires_hold", "artifact_id": artifact_id, "priority": 30}
     if 0.0 < heavy_reader_signal_trend < 0.62:
         return {"verdict": "hold", "reason": "heavy_reader_signal_trend_requires_hold", "artifact_id": artifact_id, "priority": 28}
+    if platform_soak_pressure >= 0.34:
+        return {"verdict": "hold", "reason": "platform_soak_pressure_requires_hold", "artifact_id": artifact_id, "priority": 27}
     if hidden_reader_risk >= 0.35:
         return {"verdict": "hold", "reason": "hidden_reader_risk_requires_hold", "artifact_id": artifact_id, "priority": 35}
     if quality >= 0.86 and relevance >= 0.8 and stability >= 0.78 and risk <= 0.3:

@@ -36,6 +36,7 @@ def material_from_source(source: Dict[str, Any]) -> Dict[str, Any]:
     hidden_reader_risk = 0.0
     hidden_reader_risk_trend = 0.0
     heavy_reader_signal_trend = 1.0
+    platform_soak_pressure = 0.0
     try:
         hidden_reader_risk = float(source.get("hidden_reader_risk", (source.get("metadata") or {}).get("hidden_reader_risk", 0.0)) or 0.0)
     except Exception:
@@ -48,9 +49,14 @@ def material_from_source(source: Dict[str, Any]) -> Dict[str, Any]:
         heavy_reader_signal_trend = float(source.get("heavy_reader_signal_trend", (source.get("metadata") or {}).get("heavy_reader_signal_trend", 1.0)) or 1.0)
     except Exception:
         heavy_reader_signal_trend = 1.0
+    try:
+        platform_soak_pressure = float(source.get("platform_soak_pressure", (source.get("metadata") or {}).get("platform_soak_pressure", 0.0)) or 0.0)
+    except Exception:
+        platform_soak_pressure = 0.0
     metadata["hidden_reader_risk"] = round(hidden_reader_risk, 4)
     metadata["hidden_reader_risk_trend"] = round(hidden_reader_risk_trend, 4)
     metadata["heavy_reader_signal_trend"] = round(heavy_reader_signal_trend, 4)
+    metadata["platform_soak_pressure"] = round(platform_soak_pressure, 4)
     return {
         "material_id": str(source.get("material_id") or f"track:{track_id}"),
         "source": str(source.get("source") or "webnovel_track"),
@@ -65,7 +71,8 @@ def material_from_source(source: Dict[str, Any]) -> Dict[str, Any]:
             float(source.get("risk_score", 0.0) or 0.0)
             + min(0.35, hidden_reader_risk * 0.25)
             + min(0.2, hidden_reader_risk_trend * 0.2)
-            + min(0.2, max(0.0, 0.72 - heavy_reader_signal_trend) * 0.25),
+            + min(0.2, max(0.0, 0.72 - heavy_reader_signal_trend) * 0.25)
+            + min(0.2, platform_soak_pressure * 0.25),
         ),
         "novelty_score": float(source.get("novelty_score", 0.0) or 0.0),
         "metadata": metadata,
@@ -91,6 +98,7 @@ def artifact_from_episode_result(cfg: Dict[str, Any], episode_result: Dict[str, 
             continue
     hidden_reader_risk_trend = 0.0
     heavy_reader_signal_trend = 1.0
+    platform_soak_pressure = 0.0
     try:
         hidden_reader_risk_trend = float(threshold_history.get("hidden_reader_risk_trend", 0.0) or 0.0)
     except Exception:
@@ -99,6 +107,20 @@ def artifact_from_episode_result(cfg: Dict[str, Any], episode_result: Dict[str, 
         heavy_reader_signal_trend = float(threshold_history.get("heavy_reader_signal_trend", 1.0) or 1.0)
     except Exception:
         heavy_reader_signal_trend = 1.0
+    soak_history = dict((state.get("control") or {}).get("soak_history") or {})
+    try:
+        platform_soak_pressure = float(soak_history.get("platform_soak_pressure", 0.0) or 0.0)
+    except Exception:
+        platform_soak_pressure = 0.0
+    if platform_soak_pressure <= 0.0:
+        recent = list(soak_history.get("history", []) or [])[-4:]
+        if recent:
+            values = []
+            for item in recent:
+                steady = float(item.get("steady_noop_ratio", 0.0) or 0.0)
+                heavy = float(item.get("heavy_reader_signal", 0.0) or 0.0)
+                values.append(max(0.0, min(1.0, max(0.0, 0.76 - steady) * 0.55 + max(0.0, 0.72 - heavy) * 0.95)))
+            platform_soak_pressure = sum(values) / len(values)
     return {
         "artifact_id": artifact_id,
         "artifact_type": "episode_output",
@@ -116,6 +138,7 @@ def artifact_from_episode_result(cfg: Dict[str, Any], episode_result: Dict[str, 
             + min(0.35, hidden_reader_risk * 0.25)
             + min(0.2, hidden_reader_risk_trend * 0.2),
             + min(0.2, max(0.0, 0.72 - heavy_reader_signal_trend) * 0.25),
+            + min(0.2, platform_soak_pressure * 0.25),
         ),
         "metadata": {
             "failed_checks": list(gate.get("failed_checks", []) or []),
@@ -123,6 +146,7 @@ def artifact_from_episode_result(cfg: Dict[str, Any], episode_result: Dict[str, 
             "hidden_reader_risk": round(hidden_reader_risk, 4),
             "hidden_reader_risk_trend": round(hidden_reader_risk_trend, 4),
             "heavy_reader_signal_trend": round(heavy_reader_signal_trend, 4),
+            "platform_soak_pressure": round(platform_soak_pressure, 4),
         },
     }
 

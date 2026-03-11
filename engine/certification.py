@@ -138,6 +138,25 @@ def _heavy_reader_signal_from_state(state: Dict[str, Any]) -> float:
     except Exception:
         return 1.0
 
+
+def _platform_soak_pressure_from_state(state: Dict[str, Any]) -> float:
+    story_state = dict(state.get("story_state_v2", {}) or {})
+    soak_history = dict((story_state.get("control", {}) or {}).get("soak_history", {}) or {})
+    history = list(soak_history.get("history", []) or [])
+    recent = history[-4:]
+    if recent:
+        values = []
+        for item in recent:
+            steady = float(item.get("steady_noop_ratio", 0.0) or 0.0)
+            heavy_reader_signal = float(item.get("heavy_reader_signal", 0.0) or 0.0)
+            values.append(
+                max(0.0, min(1.0, max(0.0, 0.76 - steady) * 0.55 + max(0.0, 0.72 - heavy_reader_signal) * 0.95))
+            )
+        return round(_mean(values), 4)
+    steady = float(soak_history.get("steady_noop_ratio", 0.0) or 0.0)
+    heavy_reader_signal = float(soak_history.get("heavy_reader_signal_trend", 0.0) or 0.0)
+    return round(max(0.0, min(1.0, max(0.0, 0.76 - steady) * 0.55 + max(0.0, 0.72 - heavy_reader_signal) * 0.95)), 4)
+
 def certify(cfg: dict, out_dir: str) -> Dict[str, Any]:
     project_dir = out_dir
     platform = cfg["project"]["platform"]
@@ -240,17 +259,23 @@ def save_report(cfg: dict, out_dir: str, report: Dict[str, Any]) -> str:
             state = {}
     hidden_reader_risk = _hidden_reader_risk_from_state(state)
     heavy_reader_signal_trend = _heavy_reader_signal_from_state(state)
+    platform_soak_pressure = _platform_soak_pressure_from_state(state)
     promotion_guidance = {
-        "verdict": "promote" if report.get("market", {}).get("ok") and hidden_reader_risk < 0.35 and heavy_reader_signal_trend >= 0.62 else "hold",
+        "verdict": "promote" if report.get("market", {}).get("ok") and hidden_reader_risk < 0.35 and heavy_reader_signal_trend >= 0.62 and platform_soak_pressure < 0.34 else "hold",
         "reason": (
             "market_ok_and_reader_quality_bounded"
-            if report.get("market", {}).get("ok") and hidden_reader_risk < 0.35 and heavy_reader_signal_trend >= 0.62
+            if report.get("market", {}).get("ok") and hidden_reader_risk < 0.35 and heavy_reader_signal_trend >= 0.62 and platform_soak_pressure < 0.34
+            else "hidden_reader_risk_requires_hold"
+            if hidden_reader_risk >= 0.35
             else "heavy_reader_signal_requires_hold"
             if heavy_reader_signal_trend < 0.62
+            else "platform_soak_pressure_requires_hold"
+            if platform_soak_pressure >= 0.34
             else "hidden_reader_risk_requires_hold"
         ),
         "hidden_reader_risk": hidden_reader_risk,
         "heavy_reader_signal_trend": heavy_reader_signal_trend,
+        "platform_soak_pressure": platform_soak_pressure,
     }
     report["business_feedback"] = business_feedback
     report["promotion_guidance"] = promotion_guidance

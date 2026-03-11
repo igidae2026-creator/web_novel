@@ -47,12 +47,14 @@ def test_material_from_source_carries_hidden_reader_risk_into_metadata_and_risk(
             "hidden_reader_risk": 0.4,
             "hidden_reader_risk_trend": 0.36,
             "heavy_reader_signal_trend": 0.58,
+            "platform_soak_pressure": 0.39,
         }
     )
 
     assert material["metadata"]["hidden_reader_risk"] == 0.4
     assert material["metadata"]["hidden_reader_risk_trend"] == 0.36
     assert material["metadata"]["heavy_reader_signal_trend"] == 0.58
+    assert material["metadata"]["platform_soak_pressure"] == 0.39
     assert material["risk_score"] > 0.2
 
 
@@ -69,7 +71,13 @@ def test_artifact_from_episode_result_normalizes_episode_output(tmp_path, monkey
             "predicted_retention": 0.84,
             "quality_score": 0.79,
             "quality_gate": {"passed": True, "failed_checks": []},
-            "story_state": {"world": {"instability": 4}, "control": {"final_threshold_history": {"hidden_reader_risk_trend": 0.41, "heavy_reader_signal_trend": 0.59}}},
+            "story_state": {
+                "world": {"instability": 4},
+                "control": {
+                    "final_threshold_history": {"hidden_reader_risk_trend": 0.41, "heavy_reader_signal_trend": 0.59},
+                    "soak_history": {"history": [{"episode": 11, "steady_noop_ratio": 0.57, "heavy_reader_signal": 0.53}]},
+                },
+            },
         },
     )
 
@@ -79,6 +87,7 @@ def test_artifact_from_episode_result_normalizes_episode_output(tmp_path, monkey
     assert artifact["metadata"]["world_instability"] == 4
     assert artifact["metadata"]["hidden_reader_risk_trend"] == 0.41
     assert artifact["metadata"]["heavy_reader_signal_trend"] == 0.59
+    assert artifact["metadata"]["platform_soak_pressure"] >= 0.28
 
 
 def test_track_job_payload_and_decision_surface_are_contract_safe():

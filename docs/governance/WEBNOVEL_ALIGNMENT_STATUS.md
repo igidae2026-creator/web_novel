@@ -158,3 +158,4 @@ The `100%` bar means all of the following are true at once:
 - define measurable pass criteria for upper-tier web-novel quality
 - merge overlapping doc families into one canonical quality-plan surface and one canonical audit surface
 - 2026-03-12: `2/12`로 platform-aware soak 결과를 운영 정책까지 연결했다. `portfolio_orchestrator`, `cross_track_release`, `track_loop`가 최근 `soak_report`의 `steady_noop_ratio`, `heavy_reader_signal_floor_mean`, `repair_rate_mean`, `dominant_mode`를 읽어 portfolio score, release hold/stagger, queue generation budget severity에 직접 페널티를 준다.
+- 2026-03-12: `3/12`로 platform-aware soak pressure를 policy 경계까지 올렸다. `metaos_policy`, `certification`, `webnovel_adapter`가 `platform_soak_pressure`를 material/admission, artifact/promotion, certification guidance hold 근거와 adapter metadata/risk score에 반영한다.
