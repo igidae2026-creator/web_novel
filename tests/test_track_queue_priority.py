@@ -46,3 +46,52 @@ def test_build_track_dirs_prioritizes_reader_quality_failed_criteria_within_same
 
     assert ordered[0].endswith("track_b")
     assert ordered[1].endswith("track_a")
+
+
+def test_build_track_dirs_prioritizes_hidden_reader_risk_within_same_band(tmp_path):
+    tracks_root = tmp_path / "domains" / "webnovel" / "tracks"
+    track_a = tracks_root / "track_a"
+    track_b = tracks_root / "track_b"
+    for track in [track_a, track_b]:
+        _write_json(track / "track.json", {"project": {"platform": "Munpia", "genre_bucket": "A"}})
+
+    _write_json(
+        track_a / "outputs" / "final_threshold_eval.json",
+        {
+            "failed_bundles": ["generation_capability"],
+            "failed_criteria": ["reader_retention_stability"],
+            "criteria": {
+                "reader_retention_stability": {
+                    "details": {
+                        "reader_quality_debt": {
+                            "thinness_debt": 0.08,
+                            "fake_urgency_debt": 0.07,
+                        }
+                    }
+                }
+            },
+        },
+    )
+    _write_json(
+        track_b / "outputs" / "final_threshold_eval.json",
+        {
+            "failed_bundles": ["generation_capability"],
+            "failed_criteria": ["reader_retention_stability"],
+            "criteria": {
+                "reader_retention_stability": {
+                    "details": {
+                        "reader_quality_debt": {
+                            "thinness_debt": 0.22,
+                            "fake_urgency_debt": 0.16,
+                            "compression_debt": 0.12,
+                        }
+                    }
+                }
+            },
+        },
+    )
+
+    ordered = build_track_dirs(str(tracks_root))
+
+    assert ordered[0].endswith("track_b")
+    assert ordered[1].endswith("track_a")

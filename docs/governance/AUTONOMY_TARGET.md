@@ -16,6 +16,7 @@ It defines the unattended execution standard separately from broader product or 
 - The default unattended loop should trend toward `final_threshold_ready=true` instead of oscillating around repeated rescue states.
 - Reader-facing debt, arc debt, market pressure, and soak history must automatically alter the next cycle without operator interpretation.
 - Hidden heavy-reader complaints such as thinness, repetition fatigue, deja-vu rhythm, fake urgency, payoff distrust, tonal flattening, and protagonist-fantasy thinning must be treated as autonomy failures if the loop keeps reproducing them unattended.
+- A run does not count as converged just because it is operationally steady; `autonomous_convergence_trend` must stay blocked whenever hidden reader-risk trend remains high across soak history.
 
 ## Evaluation Gate
 
@@ -33,6 +34,7 @@ It defines the unattended execution standard separately from broader product or 
 - Add an outer ingestion and triage layer that can classify new inputs, bind them to the right subsystem, and either reject, sandbox, or promote them without operator involvement.
 - Judge autonomy progress against the stricter bar of "human intervention produces negligible additional quality gain," not merely "the existing loop runs unattended."
 - A loop that runs unattended while repeatedly emitting thin, repetitive, low-trust chapters has not met the autonomy target; unattended operation without reader-facing convergence is not success.
+- A loop that stays technically steady while normalizing thinness, repetition fatigue, deja-vu drift, fake urgency, or low compression is still failing the autonomy target.
 
 ## Canonical Runtime Stack
 

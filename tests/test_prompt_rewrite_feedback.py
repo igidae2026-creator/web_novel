@@ -15,6 +15,13 @@ def _cfg() -> dict:
             "words_per_episode_max": 3500,
         },
         "quality": {},
+        "quality": {
+            "hook_score_min": 0.7,
+            "paywall_score_min": 0.7,
+            "emotion_density_min": 0.65,
+            "repetition_max": 0.35,
+            "escalation_min": 0.65,
+        },
     }
 
 
@@ -59,3 +66,25 @@ def test_episode_rewrite_prompt_includes_targeted_guidance_for_uncovered_gate_fa
     assert "열린 질문, 즉시 위험, 되돌릴 수 없는 선택 비용" in prompt
     assert "위협이 멀리 있다는 느낌을 없애고" in prompt
     assert "이전에 심은 약속이나 떡밥 중 하나를 실제 보상" in prompt
+
+
+def test_master_outline_prompt_includes_design_guardrails_for_hidden_reader_risk():
+    prompt = PROMPTS.master_outline(
+        _cfg(),
+        ext_snapshot={},
+        sub_engine_key="AUTO",
+        story_state={
+            "portfolio": {
+                "design_guardrails": [
+                    "새 아크와 새 작품 기획에서 얇은 장면 연결과 말뿐인 긴장 유발 패턴을 금지한다",
+                    "최근과 유사한 갈등 구조를 반복하지 말고 보상 구조 자체를 바꾼다",
+                ]
+            },
+            "pattern_memory": {"overused_events": ["betrayal"], "exploration_bias": 8},
+        },
+    )
+
+    assert "포트폴리오 설계 가드레일" in prompt
+    assert "얇은 장면 연결과 말뿐인 긴장 유발 패턴을 금지한다" in prompt
+    assert "패턴 메모리" in prompt
+    assert "설계 금지/회피 규칙 3개" in prompt

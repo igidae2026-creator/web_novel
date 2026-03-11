@@ -122,13 +122,18 @@ def _arc_pressure_directives(story_state: dict | None) -> str:
 
 class PROMPTS:
     @staticmethod
-    def master_outline(cfg: dict, ext_snapshot: dict, sub_engine_key: str) -> str:
+    def master_outline(cfg: dict, ext_snapshot: dict, sub_engine_key: str, story_state: dict | None = None) -> str:
         pj = cfg["project"]
         nv = cfg["novel"]
         q = cfg["quality"]
         plat = PLATFORM_STRATEGY.get(pj["platform"], {})
         bucket = pj["genre_bucket"]
         sub = pick_subengine(bucket, sub_engine_key)
+        portfolio = dict((story_state or {}).get("portfolio", {}) or {})
+        pattern = dict((story_state or {}).get("pattern_memory", {}) or {})
+        design_guardrails = list(portfolio.get("design_guardrails", []) or [])
+        if not design_guardrails:
+            design_guardrails = list(((cfg.get("project", {}) or {}).get("bootstrap_design_guardrails", []) or []))
 
         return f"""한국 웹소설 장편(연재) 아웃라인을 작성하라.
 
@@ -152,6 +157,12 @@ class PROMPTS:
 외부 랭킹 관측치(있으면 반영):
 {ext_snapshot}
 
+포트폴리오 설계 가드레일:
+{design_guardrails}
+
+패턴 메모리:
+{pattern}
+
 출력(한국어, 구체적으로):
 1) 로그라인 1문장
 2) 세계 규칙/시스템/핵심 제약
@@ -160,6 +171,7 @@ class PROMPTS:
 5) 20~30화: 유료 전환 폭발 아크 비트(필수)
 6) 50화마다 아크 리셋 지점(총 {nv['total_episodes']//50}개 이상)
 7) 최종 결말과 마지막 갈등 해결
+8) 최근 실패 패턴을 피하기 위한 설계 금지/회피 규칙 3개
 불필요한 설명 금지. 사건/갈등/보상을 명확히.
 """
 

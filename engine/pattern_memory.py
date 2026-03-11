@@ -61,12 +61,15 @@ def choose_event_with_memory(state: Dict[str, Any], preferred: str, fallback: st
     coordination_health = int(portfolio_memory.get("coordination_health", 5) or 5)
     cadence_guard = int(portfolio_memory.get("cadence_guard", 5) or 5)
     release_guard = int(portfolio_memory.get("release_guard", 5) or 5)
+    hidden_reader_risk = float(portfolio_memory.get("hidden_reader_risk", 0.0) or 0.0)
     if int(portfolio_metrics.get("novelty_debt", 0) or 0) >= 6:
         exploration_bias = max(exploration_bias, 7)
     if coordination_health <= 4:
         exploration_bias = max(exploration_bias, 6)
     if cadence_guard <= 4 or release_guard <= 4:
         exploration_bias = max(4, exploration_bias - 1)
+    if hidden_reader_risk >= 0.35:
+        exploration_bias = max(exploration_bias, 7)
 
     if preferred and preferred not in overused and preferred not in fatigue_patterns:
         return preferred
@@ -86,4 +89,5 @@ def pattern_prompt_payload(state: Dict[str, Any]) -> Dict[str, Any]:
         "overused_events": memory.get("overused_events", []),
         "exploration_bias": memory.get("exploration_bias", 0),
         "market_resonance": memory.get("market_resonance", 0),
+        "design_guardrails": (story_state.get("portfolio_memory", {}) or {}).get("design_guardrails", [])[:4],
     }

@@ -449,12 +449,22 @@ def build_outline(cfg, state, llm, cost, ext: ExternalRankSignals):
     state.data["runtime_config"] = runtime_cfg
     pj = cfg["project"]
     sub_key = pj.get("sub_engine", "AUTO")
+    ensure_story_state(state.data, cfg=cfg)
+    update_portfolio_memory(state.data, cfg=cfg)
 
     profiles_dir = os.path.join("data","profiles")
     profiles = load_profiles(profiles_dir)
 
     snap = ext.latest(pj["platform"], pj["genre_bucket"]) or {}
-    prompt = PROMPTS.master_outline(cfg, snap, sub_key)
+    prompt = PROMPTS.master_outline(
+        cfg,
+        snap,
+        sub_key,
+        story_state={
+            "portfolio": portfolio_prompt_payload(state.data),
+            "pattern_memory": pattern_prompt_payload(state.data),
+        },
+    )
     resp = llm.call(prompt, temperature=0.45)
     cost.add_usage(resp)
     outline = resp.output_text

@@ -115,6 +115,18 @@ def load_business_feedback_summary(
     summary["total_campaign_spend"] = round(float(summary["total_campaign_spend"]), 4)
     return summary
 
+
+def _hidden_reader_risk_from_state(state: Dict[str, Any]) -> float:
+    story_state = dict(state.get("story_state_v2", {}) or {})
+    reader_quality = dict((story_state.get("control", {}) or {}).get("reader_quality", {}) or {})
+    total = 0.0
+    for key in ("thinness_debt", "repetition_debt", "deja_vu_debt", "fake_urgency_debt", "compression_debt"):
+        try:
+            total += float(reader_quality.get(key, 0.0) or 0.0)
+        except Exception:
+            continue
+    return round(total, 4)
+
 def certify(cfg: dict, out_dir: str) -> Dict[str, Any]:
     project_dir = out_dir
     platform = cfg["project"]["platform"]
@@ -208,7 +220,21 @@ def save_report(cfg: dict, out_dir: str, report: Dict[str, Any]) -> str:
 
     safe_mode = bool(cfg.get("safe_mode", False))
     business_feedback = load_business_feedback_summary()
+    state_path = os.path.join(os.path.dirname(out_dir), "state.json")
+    state = {}
+    if os.path.exists(state_path):
+        try:
+            state = json.load(open(state_path, "r", encoding="utf-8"))
+        except Exception:
+            state = {}
+    hidden_reader_risk = _hidden_reader_risk_from_state(state)
+    promotion_guidance = {
+        "verdict": "promote" if report.get("market", {}).get("ok") and hidden_reader_risk < 0.35 else "hold",
+        "reason": "market_ok_and_reader_risk_bounded" if report.get("market", {}).get("ok") and hidden_reader_risk < 0.35 else "hidden_reader_risk_requires_hold",
+        "hidden_reader_risk": hidden_reader_risk,
+    }
     report["business_feedback"] = business_feedback
+    report["promotion_guidance"] = promotion_guidance
     txt = json.dumps(report, ensure_ascii=False, indent=2)
     safe_write_text(path, txt, safe_mode=safe_mode, project_dir_for_backup=out_dir)
         # Append certification snapshot to metrics
@@ -250,7 +276,7 @@ def save_report(cfg: dict, out_dir: str, report: Dict[str, Any]) -> str:
             "market_feedback_handled": True,
             "business_feedback_handled": bool(business_feedback.get("available")),
             "scope_authority_policy_ok": True,
-            "policy_decision": "promote" if report.get("market", {}).get("ok") else "hold",
+            "policy_decision": promotion_guidance["verdict"],
             "quality_lift_if_human_intervenes": grade_state.get("quality_lift_if_human_intervenes", 1.0),
         },
         safe_mode=safe_mode,

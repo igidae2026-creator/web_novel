@@ -43,6 +43,18 @@ def _queue_bundle_severity(track_dirs: list[str]) -> str:
         )
         if reader_quality_count >= 2:
             severities.append("caution")
+        criteria = dict(payload.get("criteria") or {})
+        hidden_reader_risk = 0.0
+        for criterion_name in ("reader_retention_stability", "serialization_fatigue_control"):
+            details = dict((criteria.get(criterion_name) or {}).get("details") or {})
+            debt = dict(details.get("reader_quality_debt") or {})
+            for key in ("thinness_debt", "repetition_debt", "deja_vu_debt", "fake_urgency_debt", "compression_debt"):
+                try:
+                    hidden_reader_risk += float(debt.get(key, 0.0) or 0.0)
+                except Exception:
+                    continue
+        if hidden_reader_risk >= 0.55:
+            severities.append("caution")
     if "critical" in severities:
         return "critical"
     if "caution" in severities:

@@ -34,6 +34,24 @@ def test_material_from_source_normalizes_webnovel_track_input():
     assert material["genre_bucket"] == "A"
 
 
+def test_material_from_source_carries_hidden_reader_risk_into_metadata_and_risk():
+    material = material_from_source(
+        {
+            "project": {"platform": "Munpia", "genre_bucket": "A"},
+            "track": {"id": "munpia_hidden"},
+            "material_id": "source:hidden",
+            "quality_score": 0.88,
+            "scope_fit_score": 0.82,
+            "risk_score": 0.2,
+            "novelty_score": 0.61,
+            "hidden_reader_risk": 0.4,
+        }
+    )
+
+    assert material["metadata"]["hidden_reader_risk"] == 0.4
+    assert material["risk_score"] > 0.2
+
+
 def test_artifact_from_episode_result_normalizes_episode_output(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = {

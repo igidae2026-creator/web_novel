@@ -121,3 +121,71 @@ def test_run_queue_loop_pauses_for_reader_quality_budget_pressure(tmp_path, monk
 
     track_queue_state = load_queue_state()
     assert track_queue_state["status"] == "paused"
+
+
+def test_run_queue_loop_pauses_for_hidden_reader_risk_pressure(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    track_dir = tmp_path / "domains" / "webnovel" / "tracks" / "track_hidden"
+    _write_json(track_dir / "track.json", {"project": {"platform": "Munpia", "genre_bucket": "A"}})
+    _write_json(
+        track_dir / "outputs" / "final_threshold_eval.json",
+        {
+            "failed_bundles": [],
+            "failed_criteria": ["reader_retention_stability"],
+            "criteria": {
+                "reader_retention_stability": {
+                    "details": {
+                        "reader_quality_debt": {
+                            "thinness_debt": 0.21,
+                            "fake_urgency_debt": 0.14,
+                        }
+                    }
+                },
+                "serialization_fatigue_control": {
+                    "details": {
+                        "reader_quality_debt": {
+                            "repetition_debt": 0.11,
+                            "deja_vu_debt": 0.1,
+                        }
+                    }
+                },
+            },
+            "next_required_repairs": [
+                {
+                    "criterion": "reader_retention_stability",
+                    "repair": "repair_reader_retention_stability",
+                    "priority": 20,
+                }
+            ],
+        },
+    )
+    save_queue_state(
+        {
+            "status": "running",
+            "track_dirs": [str(track_dir)],
+            "current_index": 0,
+            "last_error": None,
+        },
+        path=str(tmp_path / "domains" / "webnovel" / "tracks" / "queue_state.json"),
+    )
+    _write_json(
+        tmp_path / "runtime_config.json",
+        {
+            "generation_enabled": True,
+            "portfolio": {
+                "bundle_budgeting": {
+                    "enabled": True,
+                    "critical_generation_cap": 0,
+                    "caution_generation_cap": 0,
+                    "stable_generation_cap": 3,
+                }
+            },
+        },
+    )
+
+    ok, msg = run_queue_loop({"safe_mode": True}, max_steps=1)
+
+    assert ok is False
+    assert "Generation budget exhausted" in msg
+    track_queue_state = load_queue_state()
+    assert track_queue_state["status"] == "paused"

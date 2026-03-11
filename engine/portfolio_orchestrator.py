@@ -41,6 +41,7 @@ def _track_log_snapshot(track_dir: str, last_n: int = 8) -> Dict[str, Any]:
             "mean_retention": 0.0,
             "fatigue_score": 0.0,
             "event_crowding": 0,
+            "hidden_reader_risk": 0.0,
             "portfolio_score": 0.0,
         }
     retention = [float((row.get("retention", {}) or {}).get("predicted_next_episode", 0.0) or 0.0) for row in rows]
@@ -52,12 +53,30 @@ def _track_log_snapshot(track_dir: str, last_n: int = 8) -> Dict[str, Any]:
     mean_ceiling = sum(ceiling) / len(ceiling)
     mean_retention = sum(retention) / len(retention)
     fatigue_score = sum(repetition) / len(repetition) if repetition else 0.0
-    portfolio_score = mean_retention * 0.45 + (mean_ceiling / 100.0) * 0.40 + max(0.0, 1.0 - fatigue_score) * 0.15
+    hidden_reader_risk = 0.0
+    threshold_path = os.path.join(track_dir, "outputs", "final_threshold_eval.json")
+    threshold_payload = _load_json(threshold_path) if os.path.exists(threshold_path) else {}
+    criteria = dict((threshold_payload or {}).get("criteria", {}) or {})
+    for criterion_name in ("reader_retention_stability", "serialization_fatigue_control"):
+        details = dict((criteria.get(criterion_name) or {}).get("details", {}) or {})
+        debt = dict(details.get("reader_quality_debt") or {})
+        for key in ("thinness_debt", "repetition_debt", "deja_vu_debt", "fake_urgency_debt", "compression_debt"):
+            try:
+                hidden_reader_risk += float(debt.get(key, 0.0) or 0.0)
+            except Exception:
+                continue
+    portfolio_score = (
+        mean_retention * 0.45
+        + (mean_ceiling / 100.0) * 0.40
+        + max(0.0, 1.0 - fatigue_score) * 0.15
+        - min(0.18, hidden_reader_risk * 0.12)
+    )
     return {
         "mean_ceiling": mean_ceiling,
         "mean_retention": mean_retention,
         "fatigue_score": fatigue_score,
         "event_crowding": event_crowding,
+        "hidden_reader_risk": round(hidden_reader_risk, 4),
         "portfolio_score": portfolio_score,
     }
 
@@ -77,8 +96,8 @@ def build_portfolio_runtime_snapshot(tracks_root: str, last_n: int = 8) -> Dict[
         )
     if not tracks:
         return {"tracks": [], "boost_ready_tracks": 0, "stable_tracks": 0, "mean_portfolio_score": 0.0}
-    boost_ready = sum(1 for track in tracks if track["portfolio_score"] >= 0.68 and track["fatigue_score"] < 0.24)
-    stable = sum(1 for track in tracks if track["fatigue_score"] < 0.18 and track["event_crowding"] <= 3)
+    boost_ready = sum(1 for track in tracks if track["portfolio_score"] >= 0.68 and track["fatigue_score"] < 0.24 and track.get("hidden_reader_risk", 0.0) < 0.35)
+    stable = sum(1 for track in tracks if track["fatigue_score"] < 0.18 and track["event_crowding"] <= 3 and track.get("hidden_reader_risk", 0.0) < 0.3)
     mean_score = sum(float(track["portfolio_score"]) for track in tracks) / len(tracks)
     return {
         "tracks": tracks,

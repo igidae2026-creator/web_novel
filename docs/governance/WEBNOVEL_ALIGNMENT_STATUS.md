@@ -64,6 +64,14 @@ Until Layer 3 is rewritten through the patch method for this repository, use the
 - queue-loop budgeting now also treats stacked reader-facing failures as caution pressure, and safe overwrite policy now preserves in-place updates for queue/job/supervisor state files so control-loop closure does not leak into versioned side files
 - episode attribution now accumulates `reader_quality` debt in story state, and that debt now feeds back into preflight risk and generation-time knob correction before the next episode is drafted
 - reader-quality debt is now explicitly decomposed into `thinness_debt`, `repetition_debt`, `deja_vu_debt`, `fake_urgency_debt`, and `compression_debt`, so likely future heavy-reader complaints are tracked as runtime state instead of remaining doc-only warnings
+- hidden reader-risk debt now also affects portfolio ordering and loop budgeting, so tracks with strong thinness/repetition/deja-vu/fake-urgency pressure are pushed toward repair before more generation
+- portfolio learning and runtime release memory now penalize hidden reader-risk directly, so strong thinness/deja-vu/fake-urgency pressure lowers boost-readiness and weakens release/cadence guards instead of being ignored by allocation logic
+- certification and promotion policy now also read hidden reader-risk, so strong thinness/deja-vu/fake-urgency pressure can force automatic `hold` even when market-facing indicators look temporarily acceptable
+- source-material admission now also carries and checks hidden reader-risk, so new works or references with strong thinness/deja-vu/fake-urgency risk are no longer silently accepted into the active loop
+- outline generation and event-exploration planning now also read design guardrails derived from hidden reader-risk, so repeated thin/fake-urgency/deja-vu patterns are pushed out at planning time rather than only after runtime failure
+- new track bootstrap now also reads platform/bucket-level hidden reader-risk history, selecting a guarded initial sub-engine and bootstrap design guardrails instead of always starting from the same default setup
+- soak-history accumulation now records `hidden_reader_risk_trend`, so long unattended runs cannot count as convergence if they stay steady while thinness/repetition/deja-vu/fake-urgency/compression debt remains structurally high
+- `autonomous_convergence_trend` now requires both low human-lift and low hidden reader-risk trend, so "quietly repetitive but operationally stable" output no longer qualifies as conservative-100 progress
 
 ## Conservative Completion Estimate
 
@@ -108,6 +116,7 @@ The `100%` bar means all of the following are true at once:
 - heavy web-novel readers would continue reading for hook, payoff, episode addiction, and protagonist fantasy reasons without a person rescuing weak episodes
 - reader-quality debt, arc debt, market pressure, soak evidence, and repair state all close automatically into the next cycle
 - long unattended runs keep quality from drifting down into repeated rescue states
+- long unattended runs do not merely stay operationally steady; they also keep hidden reader-risk trend low enough that thinness, repetition fatigue, deja-vu drift, fake urgency, and compression drag are not silently normalized
 - human intervention produces near-zero marginal quality gain
 - likely future criticism vectors such as perceived thinness, repetition fatigue, deja-vu drift, fake urgency, delayed payoff trust, protagonist fantasy thinning, tonal flattening, market shift response, and control-loop leakage have already been proactively closed or reduced to low risk
 

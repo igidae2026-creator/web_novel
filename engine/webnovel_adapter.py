@@ -32,6 +32,13 @@ def material_from_source(source: Dict[str, Any]) -> Dict[str, Any]:
     platform = str(project.get("platform") or source.get("platform") or "UNKNOWN")
     genre_bucket = str(project.get("genre_bucket") or source.get("genre_bucket") or "X")
     track_id = str((source.get("track") or {}).get("id") or f"{platform}_{genre_bucket}".lower())
+    metadata = {"project": project, "track": dict(source.get("track") or {})}
+    hidden_reader_risk = 0.0
+    try:
+        hidden_reader_risk = float(source.get("hidden_reader_risk", (source.get("metadata") or {}).get("hidden_reader_risk", 0.0)) or 0.0)
+    except Exception:
+        hidden_reader_risk = 0.0
+    metadata["hidden_reader_risk"] = round(hidden_reader_risk, 4)
     return {
         "material_id": str(source.get("material_id") or f"track:{track_id}"),
         "source": str(source.get("source") or "webnovel_track"),
@@ -41,9 +48,9 @@ def material_from_source(source: Dict[str, Any]) -> Dict[str, Any]:
         "track_id": track_id,
         "quality_score": float(source.get("quality_score", 0.0) or 0.0),
         "scope_fit_score": float(source.get("scope_fit_score", 0.0) or 0.0),
-        "risk_score": float(source.get("risk_score", 0.0) or 0.0),
+        "risk_score": min(1.0, float(source.get("risk_score", 0.0) or 0.0) + min(0.35, hidden_reader_risk * 0.25)),
         "novelty_score": float(source.get("novelty_score", 0.0) or 0.0),
-        "metadata": {"project": project, "track": dict(source.get("track") or {})},
+        "metadata": metadata,
     }
 
 
@@ -56,6 +63,13 @@ def artifact_from_episode_result(cfg: Dict[str, Any], episode_result: Dict[str, 
     artifact_id = f"{project.get('platform', 'unknown').lower()}:{project.get('genre_bucket', 'x').lower()}:ep{episode:03}"
     gate = dict(episode_result.get("quality_gate") or {})
     state = dict(episode_result.get("story_state") or {})
+    reader_quality = dict((state.get("control") or {}).get("reader_quality") or {})
+    hidden_reader_risk = 0.0
+    for key in ("thinness_debt", "repetition_debt", "deja_vu_debt", "fake_urgency_debt", "compression_debt"):
+        try:
+            hidden_reader_risk += float(reader_quality.get(key, 0.0) or 0.0)
+        except Exception:
+            continue
     return {
         "artifact_id": artifact_id,
         "artifact_type": "episode_output",
@@ -67,10 +81,11 @@ def artifact_from_episode_result(cfg: Dict[str, Any], episode_result: Dict[str, 
         "quality_score": float(episode_result.get("predicted_retention", 0.0) or 0.0),
         "relevance_score": float(episode_result.get("quality_score", episode_result.get("payoff_score", 0.0)) or 0.0),
         "stability_score": 1.0 if gate.get("passed", False) else 0.0,
-        "risk_score": float(len(list(gate.get("failed_checks", []) or []))) / 10.0,
+        "risk_score": min(1.0, float(len(list(gate.get("failed_checks", []) or []))) / 10.0 + min(0.35, hidden_reader_risk * 0.25)),
         "metadata": {
             "failed_checks": list(gate.get("failed_checks", []) or []),
             "world_instability": ((state.get("world") or {}).get("instability")),
+            "hidden_reader_risk": round(hidden_reader_risk, 4),
         },
     }
 

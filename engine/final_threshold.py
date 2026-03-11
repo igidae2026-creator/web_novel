@@ -422,25 +422,30 @@ def _record_final_threshold_history(
             "observed": 0,
             "ready_ratio": 0.0,
             "recent_fail_ratio": 0.0,
+            "hidden_reader_risk_trend": 0.0,
             "history": [],
         }
     )
+    convergence_details = dict(((report.get("criteria", {}) or {}).get("autonomous_convergence_trend", {}) or {}).get("details", {}) or {})
     item = {
         "ready": bool(report.get("final_threshold_ready")),
         "failed_criteria_count": len(list(report.get("failed_criteria", []) or [])),
         "failed_bundle_count": len(list(report.get("failed_bundles", []) or [])),
         "quality_lift_if_human_intervenes": _as_float(report.get("quality_lift_if_human_intervenes"), 1.0),
+        "hidden_reader_risk_trend": _as_float(convergence_details.get("hidden_reader_risk_trend"), 0.0),
     }
     history = (list(history_state.get("history", []) or []) + [item])[-12:]
     observed = int(history_state.get("observed", 0) or 0) + 1
     ready_ratio = sum(1 for row in history if row.get("ready")) / max(1, len(history))
     recent = history[-4:]
     recent_fail_ratio = sum(1 for row in recent if not row.get("ready")) / max(1, len(recent))
+    hidden_reader_risk_trend = sum(_as_float(row.get("hidden_reader_risk_trend"), 0.0) for row in recent) / max(1, len(recent))
     history_state.update(
         {
             "observed": observed,
             "ready_ratio": round(ready_ratio, 4),
             "recent_fail_ratio": round(recent_fail_ratio, 4),
+            "hidden_reader_risk_trend": round(hidden_reader_risk_trend, 4),
             "history": history,
         }
     )
@@ -594,24 +599,29 @@ def evaluate_final_threshold_bundle(
             "dominant_mode": soak_history.get("dominant_mode", "unknown"),
             "observed": soak_history.get("observed", 0),
             "quality_lift_trend": soak_history.get("quality_lift_trend", 1.0),
+            "hidden_reader_risk_trend": soak_history.get("hidden_reader_risk_trend", 0.0),
         }
+    hidden_reader_risk_trend = _as_float(soak_report.get("hidden_reader_risk_trend", soak_history.get("hidden_reader_risk_trend", 0.0)), 0.0)
     convergence_history = list(soak_history.get("history", []) or [])
     convergence_ready = (
         bool(soak_report.get("tested"))
         and _as_float(soak_report.get("steady_noop_ratio"), 0.0) >= 0.72
         and str(soak_report.get("dominant_mode") or "") in {"steady", "noop"}
         and human_lift <= max(DEFAULT_HUMAN_LIFT_THRESHOLD, 0.08)
+        and hidden_reader_risk_trend <= 0.32
     )
     if len(convergence_history) >= 3:
         recent = convergence_history[-3:]
         steady = all(float(item.get("steady_noop_ratio", 0.0) or 0.0) >= 0.68 for item in recent)
         low_lift = all(float(item.get("quality_lift_if_human_intervenes", 1.0) or 1.0) <= 0.08 for item in recent)
-        convergence_ready = convergence_ready or (steady and low_lift)
+        low_hidden_risk = all(float(item.get("hidden_reader_risk", hidden_reader_risk_trend) or hidden_reader_risk_trend) <= 0.32 for item in recent)
+        convergence_ready = convergence_ready or (steady and low_lift and low_hidden_risk)
     if not convergence_ready and int(threshold_history.get("observed", 0) or 0) >= 4:
         convergence_ready = (
             _as_float(threshold_history.get("ready_ratio"), 0.0) >= 0.75
             and _as_float(threshold_history.get("recent_fail_ratio"), 1.0) <= 0.25
             and human_lift <= 0.08
+            and hidden_reader_risk_trend <= 0.32
         )
     fault_injection = dict(cycle_context.get("fault_injection") or {})
     scope_auto = bool(cycle_context.get("scope_authority_policy_ok"))
@@ -844,6 +854,7 @@ def evaluate_final_threshold_bundle(
             else "recent unattended cycles do not yet prove convergence toward the autonomous target",
             {
                 "observed_cycles": len(convergence_history),
+                "hidden_reader_risk_trend": hidden_reader_risk_trend,
                 "recent_history": convergence_history[-3:],
                 "final_threshold_history": threshold_history,
             },
@@ -1062,6 +1073,7 @@ def _sync_supervisor_threshold(
     state["reader_quality_priority"] = reader_quality_priority
     state["runtime_repairs"] = runtime_repairs
     state["quality_lift_if_human_intervenes"] = _as_float(report.get("quality_lift_if_human_intervenes"), 1.0)
+    state["hidden_reader_risk_trend"] = _as_float((((report.get("criteria", {}) or {}).get("autonomous_convergence_trend", {}) or {}).get("details", {}) or {}).get("hidden_reader_risk_trend"), 0.0)
     if report.get("final_threshold_ready"):
         if state.get("status") == "blocked" and state.get("stop_reason") == "final_threshold_failed":
             state["status"] = "running"

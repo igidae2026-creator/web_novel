@@ -130,6 +130,7 @@ It should be grounded in:
 - promise/payoff graph state
 - causal and ceiling reports
 - repeated unattended runtime evidence
+- soak-history evidence that stays low on hidden reader-risk instead of merely looking operationally stable
 
 ## Non-Goals
 
@@ -158,5 +159,6 @@ The system should:
 - convert that debt into repair priority, preflight pressure, prompt pressure, and generation-time knob changes
 - treat thinness, repetition fatigue, deja-vu drift, fake cliffhangers, tonal flattening, and payoff trust erosion as first-class debt sources rather than vague taste complaints
 - keep explicit debt memory for thinness, repetition, deja-vu drift, fake urgency, and low compression so these complaints survive beyond one bad episode and alter the next cycle
+- refuse to treat unattended convergence as success when soak history shows these hidden reader-risk debts remain structurally elevated
 - keep doing this through unattended cycles until heavy-reader bundle closure becomes the default runtime state
 - treat "looks good in the current visible scope" as insufficient until likely future heavy-reader complaints and long-run drift risks are also proactively reduced

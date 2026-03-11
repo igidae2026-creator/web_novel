@@ -205,6 +205,7 @@ def record_soak_history(
 ) -> Dict[str, Any]:
     story_state = ensure_story_state(state)
     control = story_state.setdefault("control", {})
+    reader_quality = dict(control.get("reader_quality", {}) or {})
     soak_state = control.setdefault(
         "soak_history",
         {
@@ -212,14 +213,30 @@ def record_soak_history(
             "steady_noop_ratio": 0.0,
             "dominant_mode": "unknown",
             "quality_lift_trend": 1.0,
+            "hidden_reader_risk_trend": 1.0,
             "history": [],
         },
+    )
+    hidden_reader_risk = round(
+        min(
+            1.0,
+            (
+                float(reader_quality.get("thinness_debt", 0.0) or 0.0)
+                + float(reader_quality.get("repetition_debt", 0.0) or 0.0)
+                + float(reader_quality.get("deja_vu_debt", 0.0) or 0.0)
+                + float(reader_quality.get("fake_urgency_debt", 0.0) or 0.0)
+                + float(reader_quality.get("compression_debt", 0.0) or 0.0)
+            )
+            / 5.0,
+        ),
+        4,
     )
     snapshot = {
         "episode": int(episode),
         "steady_noop_ratio": round(float(soak_report.get("steady_noop_ratio", 0.0) or 0.0), 4),
         "dominant_mode": str(soak_report.get("dominant_mode") or "unknown"),
         "quality_lift_if_human_intervenes": round(float(quality_lift_if_human_intervenes or 0.0), 4),
+        "hidden_reader_risk": hidden_reader_risk,
     }
     history = (list(soak_state.get("history", []) or []) + [snapshot])[-12:]
     observed = int(soak_state.get("observed", 0) or 0) + 1
@@ -234,6 +251,10 @@ def record_soak_history(
     )
     soak_state["quality_lift_trend"] = round(
         float(soak_state.get("quality_lift_trend", 1.0) or 1.0) * blend + snapshot["quality_lift_if_human_intervenes"] * (1.0 - blend),
+        4,
+    )
+    soak_state["hidden_reader_risk_trend"] = round(
+        float(soak_state.get("hidden_reader_risk_trend", hidden_reader_risk) or hidden_reader_risk) * blend + hidden_reader_risk * (1.0 - blend),
         4,
     )
     state["story_state_v2"] = story_state
@@ -262,6 +283,7 @@ def estimate_human_quality_lift(
     soak_observed = int(soak_history.get("observed", 0) or 0)
     soak_ratio = float(soak_history.get("steady_noop_ratio", 0.0) or 0.0)
     soak_lift_trend = float(soak_history.get("quality_lift_trend", 1.0) or 1.0)
+    hidden_reader_risk_trend = float(soak_history.get("hidden_reader_risk_trend", 0.0) or 0.0)
 
     lift = 0.16
     lift -= min(0.1, balanced_total * 0.1)
@@ -273,4 +295,5 @@ def estimate_human_quality_lift(
     if soak_observed:
         lift -= min(0.05, soak_ratio * 0.06)
         lift -= min(0.03, max(0.0, 0.2 - soak_lift_trend))
+        lift += min(0.05, max(0.0, hidden_reader_risk_trend - 0.24) * 0.18)
     return round(_clamp(lift, 0.0, 1.0), 4)

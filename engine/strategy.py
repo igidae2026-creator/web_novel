@@ -117,6 +117,29 @@ def pick_subengine(bucket: str, requested_key: str) -> SubEngine:
     return subs[0]
 
 
+def pick_bootstrap_subengine(bucket: str, hidden_reader_risk: float = 0.0) -> SubEngine:
+    subs = GENRE_SUBENGINES.get(bucket, [])
+    if not subs:
+        return SubEngine("GENERIC", "기본", "기본")
+    if hidden_reader_risk >= 0.55 and len(subs) >= 3:
+        return subs[2]
+    if hidden_reader_risk >= 0.35 and len(subs) >= 2:
+        return subs[1]
+    return subs[0]
+
+
+def bootstrap_design_guardrails(hidden_reader_risk: float = 0.0) -> List[str]:
+    guardrails: List[str] = []
+    if hidden_reader_risk >= 0.35:
+        guardrails.append("초기 기획에서 얇은 장면 연결과 말뿐인 긴장 유발 패턴을 금지한다")
+        guardrails.append("초반 3화 안에 실제 손실, 선택 비용, 보상 회수 중 최소 하나를 확정한다")
+    if hidden_reader_risk >= 0.5:
+        guardrails.append("최근과 유사한 갈등 구조와 클리프행어 어법을 반복하지 말고 보상 구조 자체를 바꾼다")
+    if not guardrails:
+        guardrails.append("초기 기획에서 강한 후킹과 장기 payoff를 함께 설계한다")
+    return guardrails[:4]
+
+
 # Joara strategy
 PLATFORM_STRATEGY["Joara"] = {
     "pacing": "balanced",

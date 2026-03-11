@@ -327,7 +327,12 @@ def test_final_threshold_can_use_soak_history_fallback(tmp_path):
                         "steady_noop_ratio": 0.78,
                         "dominant_mode": "steady",
                         "quality_lift_trend": 0.04,
-                        "history": [],
+                        "hidden_reader_risk_trend": 0.18,
+                        "history": [
+                            {"episode": 1, "steady_noop_ratio": 0.74, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.05, "hidden_reader_risk": 0.22},
+                            {"episode": 2, "steady_noop_ratio": 0.77, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.04, "hidden_reader_risk": 0.2},
+                            {"episode": 3, "steady_noop_ratio": 0.78, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.04, "hidden_reader_risk": 0.18},
+                        ],
                     }
                 },
                 "promise_graph": {"payoff_integrity": 0.84, "payoff_corruption_flags": []},
@@ -379,6 +384,79 @@ def test_final_threshold_can_use_soak_history_fallback(tmp_path):
     assert report["quality_lift_if_human_intervenes"] <= 0.04
 
 
+def test_final_threshold_blocks_convergence_when_hidden_reader_risk_trend_stays_high(tmp_path):
+    track_dir = tmp_path / "domains" / "webnovel" / "tracks" / "track_hidden_risk"
+    out_dir = track_dir / "outputs"
+    out_dir.mkdir(parents=True)
+
+    _write_json(
+        track_dir / "state.json",
+        {
+            "story_state_v2": {
+                "control": {
+                    "soak_history": {
+                        "observed": 4,
+                        "steady_noop_ratio": 0.82,
+                        "dominant_mode": "steady",
+                        "quality_lift_trend": 0.03,
+                        "hidden_reader_risk_trend": 0.46,
+                        "history": [
+                            {"episode": 1, "steady_noop_ratio": 0.76, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.05, "hidden_reader_risk": 0.42},
+                            {"episode": 2, "steady_noop_ratio": 0.8, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.04, "hidden_reader_risk": 0.44},
+                            {"episode": 3, "steady_noop_ratio": 0.81, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.03, "hidden_reader_risk": 0.45},
+                            {"episode": 4, "steady_noop_ratio": 0.82, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.03, "hidden_reader_risk": 0.46},
+                        ],
+                    }
+                },
+                "promise_graph": {"payoff_integrity": 0.84, "payoff_corruption_flags": []},
+                "cast": {"protagonist": {"progress": 2, "backlash": 1, "urgency": 8}},
+            },
+            "last_quality_gate": {
+                "passed": True,
+                "checks": {"hook_score": True, "cliffhanger_valid": True, "world_instability": True},
+                "predicted_retention": 0.84,
+                "content_ceiling_total": 70,
+                "causal_score": 0.88,
+            },
+        },
+    )
+    _append_jsonl(
+        out_dir / "metrics.jsonl",
+        {
+            "episode": 4,
+            "episode_attribution": {"lineage_parent": "outline:v12", "retention_signal": 0.84, "pacing_signal": 0.75, "fatigue_signal": 0.1, "payoff_signal": 0.8},
+            "scores": {"hook_score": 0.88, "payoff_score": 0.8, "pacing_score": 0.75, "character_score": 0.79, "repetition_score": 0.1},
+            "retention": {"predicted_next_episode": 0.84},
+            "content_ceiling": {"ceiling_total": 70},
+            "meta": {"scene_causality": {"score": 0.88}},
+        },
+    )
+
+    queue_path = tmp_path / "job_queue.json"
+    supervisor_path = tmp_path / "supervisor_state.json"
+    admission_path = tmp_path / "admission_state.json"
+    promotion_path = tmp_path / "promotion_state.json"
+    save_job_queue_state({"queue_status": "running", "active_job_id": None, "jobs": []}, path=str(queue_path), safe_mode=False)
+    save_supervisor_state({"status": "running", "active_job_id": None}, path=str(supervisor_path), safe_mode=False)
+    save_admission_state({"last_scope_decision": {"material_id": "mat:hidden", "decision": "accepted"}}, path=str(admission_path), safe_mode=False)
+    save_promotion_state({"last_promotion_decision": {"artifact_id": "art:hidden", "decision": "promoted"}}, path=str(promotion_path), safe_mode=False)
+
+    report = evaluate_final_threshold_bundle(
+        {"quality": {"predicted_retention_min": 0.8, "causal_score_min": 0.72, "ceiling_total_min": 65}, "safe_mode": False},
+        str(out_dir),
+        cycle_context={"track_id": "track_hidden_risk", "action": "generate", "next_step_recorded": True, "scope_authority_policy_ok": True, "market_feedback_handled": True},
+        queue_path=str(queue_path),
+        supervisor_path=str(supervisor_path),
+        admission_path=str(admission_path),
+        promotion_path=str(promotion_path),
+        safe_mode=False,
+    )
+
+    assert report["criteria"]["soak_steady_noop_dominance"]["passed"] is True
+    assert report["criteria"]["autonomous_convergence_trend"]["passed"] is False
+    assert report["criteria"]["autonomous_convergence_trend"]["details"]["hidden_reader_risk_trend"] == 0.46
+
+
 def test_final_threshold_history_accumulates_ready_ratio(tmp_path):
     track_dir = tmp_path / "domains" / "webnovel" / "tracks" / "track_hist"
     out_dir = track_dir / "outputs"
@@ -393,10 +471,11 @@ def test_final_threshold_history_accumulates_ready_ratio(tmp_path):
                         "observed": 3,
                         "ready_ratio": 0.6667,
                         "recent_fail_ratio": 0.3333,
+                        "hidden_reader_risk_trend": 0.14,
                         "history": [
-                            {"ready": True, "failed_criteria_count": 0, "failed_bundle_count": 0, "quality_lift_if_human_intervenes": 0.04},
-                            {"ready": False, "failed_criteria_count": 2, "failed_bundle_count": 1, "quality_lift_if_human_intervenes": 0.08},
-                            {"ready": True, "failed_criteria_count": 0, "failed_bundle_count": 0, "quality_lift_if_human_intervenes": 0.03},
+                            {"ready": True, "failed_criteria_count": 0, "failed_bundle_count": 0, "quality_lift_if_human_intervenes": 0.04, "hidden_reader_risk_trend": 0.11},
+                            {"ready": False, "failed_criteria_count": 2, "failed_bundle_count": 1, "quality_lift_if_human_intervenes": 0.08, "hidden_reader_risk_trend": 0.19},
+                            {"ready": True, "failed_criteria_count": 0, "failed_bundle_count": 0, "quality_lift_if_human_intervenes": 0.03, "hidden_reader_risk_trend": 0.12},
                         ],
                     },
                     "soak_history": {
@@ -404,6 +483,7 @@ def test_final_threshold_history_accumulates_ready_ratio(tmp_path):
                         "steady_noop_ratio": 0.79,
                         "dominant_mode": "steady",
                         "quality_lift_trend": 0.04,
+                        "hidden_reader_risk_trend": 0.16,
                         "history": [],
                     },
                 },
@@ -454,6 +534,7 @@ def test_final_threshold_history_accumulates_ready_ratio(tmp_path):
     assert report["threshold_history"]["observed"] == 4
     assert report["threshold_history"]["ready_ratio"] == pytest.approx(0.5)
     assert report["threshold_history"]["recent_fail_ratio"] >= 0.25
+    assert report["threshold_history"]["hidden_reader_risk_trend"] > 0.0
 
 
 def test_final_threshold_infers_protagonist_momentum_without_rich_cast_state(tmp_path):

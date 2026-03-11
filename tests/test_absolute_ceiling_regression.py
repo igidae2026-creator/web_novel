@@ -488,6 +488,40 @@ def test_portfolio_memory_tracks_crowded_and_winning_patterns():
     assert payload["portfolio_fit"] >= 5
 
 
+def test_portfolio_memory_penalizes_hidden_reader_risk():
+    state = {}
+    cfg = {"project": {"platform": "Munpia", "genre_bucket": "B"}}
+    ensure_story_state(state, cfg=cfg)
+    state["story_state_v2"]["market"]["reader_trust"] = 7
+    state["story_state_v2"]["market"]["release_confidence"] = 6
+    state["story_state_v2"]["serialization"]["market_fit"] = 7
+    state["story_state_v2"]["control"]["reader_quality"].update(
+        {
+            "thinness_debt": 0.16,
+            "deja_vu_debt": 0.12,
+            "fake_urgency_debt": 0.11,
+            "compression_debt": 0.08,
+        }
+    )
+
+    memory = update_portfolio_memory(
+        state,
+        cfg=cfg,
+        event_plan={"type": "arrival"},
+        portfolio_snapshot=[
+            {"pattern": "betrayal", "crowding": 3},
+            {"winning_pattern": "arrival", "heat": 8},
+        ],
+    )
+    payload = portfolio_prompt_payload(state)
+
+    assert memory["hidden_reader_risk"] >= 0.47
+    assert payload["hidden_reader_risk"] >= 0.47
+    assert any("얇음, 기시감, 가짜 긴장감" in directive for directive in memory["policy_directives"])
+    assert memory["design_guardrails"]
+    assert payload["design_guardrails"]
+
+
 def test_portfolio_memory_learns_from_real_metrics_logs():
     with tempfile.TemporaryDirectory() as tmpdir:
         tracks_root = os.path.join(tmpdir, "tracks")
@@ -513,6 +547,24 @@ def test_portfolio_memory_learns_from_real_metrics_logs():
         with open(os.path.join(track_dir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
             for row in rows:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        with open(os.path.join(track_dir, "outputs", "final_threshold_eval.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "criteria": {
+                        "reader_retention_stability": {
+                            "details": {
+                                "reader_quality_debt": {
+                                    "thinness_debt": 0.11,
+                                    "fake_urgency_debt": 0.08,
+                                }
+                            }
+                        }
+                    }
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
 
         snapshot = learn_portfolio_snapshot(tracks_root)
         state = {}
@@ -524,6 +576,7 @@ def test_portfolio_memory_learns_from_real_metrics_logs():
         assert snapshot[0]["winning_pattern"] == "betrayal"
         assert memory["learned_from_logs"] is True
         assert "betrayal" in memory["winning_patterns"]
+        assert memory["hidden_reader_risk"] >= 0.0
         assert memory["coordination_health"] >= 1
         assert memory["policy_directives"]
 
@@ -1053,6 +1106,13 @@ def test_system_status_records_iteration_history_and_portfolio_signals():
 def test_record_soak_history_accumulates_stability_signal():
     state = {}
     ensure_story_state(state)
+    state["story_state_v2"]["control"]["reader_quality"] = {
+        "thinness_debt": 0.34,
+        "repetition_debt": 0.26,
+        "deja_vu_debt": 0.18,
+        "fake_urgency_debt": 0.12,
+        "compression_debt": 0.14,
+    }
 
     first = record_soak_history(
         state,
@@ -1071,6 +1131,8 @@ def test_record_soak_history_accumulates_stability_signal():
     assert second["observed"] == 2
     assert second["steady_noop_ratio"] >= 0.74
     assert second["quality_lift_trend"] <= 0.08
+    assert second["hidden_reader_risk_trend"] > 0.0
+    assert second["history"][-1]["hidden_reader_risk"] > 0.0
     assert state["story_state_v2"]["control"]["soak_history"]["history"][-1]["episode"] == 2
 
 

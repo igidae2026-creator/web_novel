@@ -31,3 +31,4 @@ System success means:
 - the automation boundary must include outer-loop judgment over new incoming materials, scope selection, and automatic promotion when they fit the canonical objective
 - reader-facing debts in hook, episode addiction, payoff, protagonist fantasy, market response, and fatigue must feed directly into the next generation cycle rather than remaining passive reports
 - likely future heavy-reader complaints such as thinness, repetition fatigue, deja-vu rhythm, fake urgency, payoff distrust, and protagonist-fantasy thinning must be treated as core product risks rather than late polish
+- long unattended steadiness does not count as success if hidden reader-risk remains high; conservative completion requires stable operation and falling thinness/repetition/deja-vu/fake-urgency/compression risk together

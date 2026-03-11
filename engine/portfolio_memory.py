@@ -15,6 +15,13 @@ def _clamp(value: int, low: int = 0, high: int = 10) -> int:
     return max(low, min(high, int(value)))
 
 
+def _as_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
 def _track_signature(cfg: Dict[str, Any] | None) -> str:
     cfg = dict(cfg or {})
     project = cfg.get("project", {})
@@ -183,6 +190,22 @@ def update_portfolio_memory(
     memory["runtime_release_learning"] = runtime_learning
     memory["runtime_outcome_memory"] = runtime_outcomes
     memory["episode_attribution_memory"] = episode_attribution_memory
+    reader_quality = dict((story_state.get("control", {}) or {}).get("reader_quality", {}) or {})
+    hidden_reader_risk = (
+        _as_float(reader_quality.get("thinness_debt"), 0.0)
+        + _as_float(reader_quality.get("repetition_debt"), 0.0)
+        + _as_float(reader_quality.get("deja_vu_debt"), 0.0)
+        + _as_float(reader_quality.get("fake_urgency_debt"), 0.0)
+        + _as_float(reader_quality.get("compression_debt"), 0.0)
+    )
+    memory["hidden_reader_risk"] = round(hidden_reader_risk, 4)
+    if hidden_reader_risk >= 0.35:
+        memory["portfolio_fit"] = _clamp(memory["portfolio_fit"] - 1)
+        memory["coordination_health"] = _clamp(memory["coordination_health"] - 1)
+        memory["release_guard"] = _clamp(memory["release_guard"] - 1)
+    if hidden_reader_risk >= 0.5:
+        memory["cadence_guard"] = _clamp(memory["cadence_guard"] - 1)
+        memory["novelty_guard"] = _clamp(memory["novelty_guard"] - 1)
     release_plan = list(release_snapshot.get("release_plan", []) or [])
     interference_pressure = int(release_snapshot.get("interference_pressure", 0) or 0)
     hold_tracks = sum(1 for item in release_plan if item.get("action") == "hold")
@@ -205,6 +228,8 @@ def update_portfolio_memory(
         directives.append("회차 압축은 유지하되 연속 폭발 대신 완급을 섞어 연재 피로를 낮춘다")
     if release_interference >= 6 or market_overlap >= 6:
         directives.append("동일 시장 포지션과 출시 타이밍 충돌을 피하도록 차별적 훅과 관계 구도를 강조한다")
+    if hidden_reader_risk >= 0.35:
+        directives.append("얇음, 기시감, 가짜 긴장감이 누적되고 있으므로 변주와 실제 대가를 우선 회복한다")
     if interference_pressure >= 4:
         directives.append("교차 트랙 릴리스 간섭을 낮추기 위해 강한 트랙은 선행 배치하고 나머지는 간격을 둔다")
     directives.extend([str(item) for item in list(release_snapshot.get("policy_directives", []) or [])[:2]])
@@ -214,6 +239,18 @@ def update_portfolio_memory(
         directives.append("실로그상 성과가 검증된 트랙에는 공격적 노출을, 피로 누적 트랙에는 안정화 운용을 적용한다")
     memory["slot_policy_directives"] = [str(item) for item in list(release_snapshot.get("policy_directives", []) or [])[:4]]
     memory["policy_directives"] = directives[:4]
+    design_guardrails: List[str] = []
+    if hidden_reader_risk >= 0.35:
+        design_guardrails.append("새 아크와 새 작품 기획에서 얇은 장면 연결과 말뿐인 긴장 유발 패턴을 금지한다")
+    if hidden_reader_risk >= 0.45:
+        design_guardrails.append("최근과 유사한 갈등 구조, 후킹 어법, 회차 말단 처리 방식을 반복하지 말고 보상 구조 자체를 바꾼다")
+    if memory["novelty_guard"] <= 4:
+        design_guardrails.append("기획 단계에서 익숙한 장식 변형이 아니라 판세를 바꾸는 새 정보, 새 비용, 새 관계 축을 먼저 설계한다")
+    if memory["cadence_guard"] <= 4:
+        design_guardrails.append("장기 연재 피로를 줄이기 위해 설명 구간을 줄이고 부분 회수와 감정 반작용을 더 촘촘히 심는다")
+    if not design_guardrails:
+        design_guardrails.append("기획 단계에서 차별화와 장기 payoff를 함께 유지한다")
+    memory["design_guardrails"] = design_guardrails[:4]
 
     state["story_state_v2"] = story_state
     sync_story_state(state)
@@ -245,8 +282,10 @@ def portfolio_prompt_payload(state: Dict[str, Any]) -> Dict[str, Any]:
         "platform_slot_pressure": memory.get("platform_slot_pressure", 0),
         "slot_policy_directives": memory.get("slot_policy_directives", [])[:4],
         "policy_directives": memory.get("policy_directives", [])[:4],
+        "design_guardrails": memory.get("design_guardrails", [])[:4],
         "runtime_release_learning": memory.get("runtime_release_learning", {}),
         "runtime_outcome_memory": memory.get("runtime_outcome_memory", {}),
         "episode_attribution_memory": memory.get("episode_attribution_memory", {}),
+        "hidden_reader_risk": memory.get("hidden_reader_risk", 0.0),
         "portfolio_metrics": story_state.get("portfolio_metrics", {}),
     }

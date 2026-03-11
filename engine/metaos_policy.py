@@ -25,10 +25,14 @@ def classify_material_for_scope(material: Dict[str, Any]) -> Dict[str, Any]:
     scope_fit = _bounded_score(material.get("scope_fit_score"))
     risk = _bounded_score(material.get("risk_score"))
     novelty = _bounded_score(material.get("novelty_score"), default=0.5)
+    metadata = dict(material.get("metadata") or {})
+    hidden_reader_risk = _bounded_score(metadata.get("hidden_reader_risk"))
     material_id = str(material.get("material_id") or "unknown_material")
 
     if risk >= 0.9:
         return {"verdict": "escalate", "reason": "high_risk_exception", "material_id": material_id}
+    if hidden_reader_risk >= 0.35:
+        return {"verdict": "hold", "reason": "hidden_reader_risk_requires_hold", "material_id": material_id, "priority": 40}
     if quality >= 0.82 and scope_fit >= 0.78 and risk <= 0.35:
         return {"verdict": "accept", "reason": "normal_scope_fit", "material_id": material_id, "priority": 20}
     if quality >= 0.72 and scope_fit >= 0.65 and risk <= 0.55 and novelty >= 0.45:
@@ -43,10 +47,14 @@ def classify_artifact_for_promotion(artifact: Dict[str, Any]) -> Dict[str, Any]:
     relevance = _bounded_score(artifact.get("relevance_score"))
     stability = _bounded_score(artifact.get("stability_score"))
     risk = _bounded_score(artifact.get("risk_score"))
+    metadata = dict(artifact.get("metadata") or {})
+    hidden_reader_risk = _bounded_score(metadata.get("hidden_reader_risk"))
     artifact_id = str(artifact.get("artifact_id") or "unknown_artifact")
 
     if risk >= 0.9:
         return {"verdict": "escalate", "reason": "high_risk_exception", "artifact_id": artifact_id}
+    if hidden_reader_risk >= 0.35:
+        return {"verdict": "hold", "reason": "hidden_reader_risk_requires_hold", "artifact_id": artifact_id, "priority": 35}
     if quality >= 0.86 and relevance >= 0.8 and stability >= 0.78 and risk <= 0.3:
         return {"verdict": "promote", "reason": "promotion_ready", "artifact_id": artifact_id, "priority": 10}
     if quality >= 0.74 and relevance >= 0.7 and stability >= 0.65 and risk <= 0.5:
