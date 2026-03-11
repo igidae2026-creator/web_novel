@@ -96,6 +96,30 @@ def test_scope_policy_holds_when_hidden_reader_risk_trend_is_high(tmp_path):
     assert any(job["job_id"] == "ingest:mat:trend" for job in load_job_queue_state(str(queue_path))["jobs"])
 
 
+def test_scope_policy_holds_when_heavy_reader_signal_trend_is_low(tmp_path):
+    admission_path = tmp_path / "admission.json"
+    queue_path = tmp_path / "job_queue.json"
+
+    result = apply_scope_policy(
+        {
+            "material_id": "mat:signal",
+            "quality_score": 0.9,
+            "scope_fit_score": 0.88,
+            "risk_score": 0.18,
+            "novelty_score": 0.7,
+            "metadata": {"heavy_reader_signal_trend": 0.58},
+        },
+        admission_path=str(admission_path),
+        queue_path=str(queue_path),
+        safe_mode=False,
+    )
+
+    assert result["decision"]["verdict"] == "hold"
+    assert result["decision"]["reason"] == "heavy_reader_signal_trend_requires_hold"
+    assert load_admission_state(str(admission_path))["pending_materials"][-1]["decision"] == "held"
+    assert any(job["job_id"] == "ingest:mat:signal" for job in load_job_queue_state(str(queue_path))["jobs"])
+
+
 def test_scope_policy_escalates_true_exception(tmp_path):
     admission_path = tmp_path / "admission.json"
     queue_path = tmp_path / "job_queue.json"
@@ -186,3 +210,27 @@ def test_promotion_policy_holds_when_hidden_reader_risk_trend_is_high(tmp_path):
     assert result["decision"]["reason"] == "hidden_reader_risk_trend_requires_hold"
     assert load_promotion_state(str(promotion_path))["pending_candidates"][-1]["decision"] == "held"
     assert any(job["job_id"] == "certify:art:trend" for job in load_job_queue_state(str(queue_path))["jobs"])
+
+
+def test_promotion_policy_holds_when_heavy_reader_signal_trend_is_low(tmp_path):
+    promotion_path = tmp_path / "promotion.json"
+    queue_path = tmp_path / "job_queue.json"
+
+    result = apply_promotion_policy(
+        {
+            "artifact_id": "art:signal",
+            "quality_score": 0.92,
+            "relevance_score": 0.88,
+            "stability_score": 0.85,
+            "risk_score": 0.18,
+            "metadata": {"heavy_reader_signal_trend": 0.59},
+        },
+        promotion_path=str(promotion_path),
+        queue_path=str(queue_path),
+        safe_mode=False,
+    )
+
+    assert result["decision"]["verdict"] == "hold"
+    assert result["decision"]["reason"] == "heavy_reader_signal_trend_requires_hold"
+    assert load_promotion_state(str(promotion_path))["pending_candidates"][-1]["decision"] == "held"
+    assert any(job["job_id"] == "certify:art:signal" for job in load_job_queue_state(str(queue_path))["jobs"])

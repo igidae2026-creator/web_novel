@@ -74,6 +74,18 @@ def _track_hidden_reader_risk(track_dir: str) -> float:
     return round(total, 4)
 
 
+def _track_heavy_reader_signal_trend(track_dir: str) -> float:
+    payload = _load_json(os.path.join(track_dir, "outputs", "final_threshold_eval.json"))
+    criteria = dict((payload.get("criteria", {}) or {}))
+    convergence = dict((criteria.get("autonomous_convergence_trend") or {}).get("details", {}) or {})
+    threshold_history = dict(payload.get("threshold_history", {}) or {})
+    if "heavy_reader_signal_trend" in convergence:
+        return round(float(convergence.get("heavy_reader_signal_trend", 0.0) or 0.0), 4)
+    if "heavy_reader_signal_trend" in threshold_history:
+        return round(float(threshold_history.get("heavy_reader_signal_trend", 0.0) or 0.0), 4)
+    return 1.0
+
+
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return max(low, min(high, float(value)))
 
@@ -226,6 +238,7 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
             mean_retention = 0.0
             mean_repetition = 0.0
         hidden_reader_risk = _track_hidden_reader_risk(track_dir)
+        heavy_reader_signal_trend = _track_heavy_reader_signal_trend(track_dir)
         adaptive_score = (
             mean_retention * 0.44
             + float(track_learning.get("success", 0.0) or 0.0) * 0.20
@@ -241,6 +254,7 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
             - float(track_learning.get("fatigue", 0.0) or 0.0) * 0.12
             - float(episode_learning.get("fatigue_signal", 0.0) or 0.0) * 0.12
             - min(0.18, hidden_reader_risk * 0.14)
+            - min(0.16, max(0.0, 0.72 - heavy_reader_signal_trend) * 0.24)
             - min(0.35, float(track_learning.get("window_wins", 0.0) or 0.0) * 0.08)
         )
         tracks.append(
@@ -256,6 +270,7 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
                 "episode_learning": episode_learning,
                 "market_rhythm": market_rhythm,
                 "hidden_reader_risk": hidden_reader_risk,
+                "heavy_reader_signal_trend": heavy_reader_signal_trend,
             }
         )
     tracks.sort(key=lambda item: (item["platform"], -item["adaptive_score"], -item["mean_retention"], item["fatigue"], item["track"]))
@@ -278,8 +293,9 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
         monopoly_risk = float((track.get("runtime_learning", {}) or {}).get("window_wins", 0.0) or 0.0)
         episode_fatigue = float((track.get("episode_learning", {}) or {}).get("fatigue_signal", 0.0) or 0.0)
         hidden_reader_risk = float(track.get("hidden_reader_risk", 0.0) or 0.0)
+        heavy_reader_signal_trend = float(track.get("heavy_reader_signal_trend", 0.0) or 0.0)
         reserved_window = int(reservation_map.get(str(track.get("track")), 0) or 0)
-        if hidden_reader_risk >= 0.42:
+        if hidden_reader_risk >= 0.42 or (0.0 < heavy_reader_signal_trend < 0.62):
             action = "hold"
         elif track["fatigue"] + learned_fatigue * 0.25 + episode_fatigue * 0.15 >= float(policy.get("fatigue_limit", 0.20) or 0.20):
             action = "hold"
@@ -310,6 +326,7 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
                 "episode_learning": dict(track.get("episode_learning", {}) or {}),
                 "market_rhythm": dict(track.get("market_rhythm", {}) or {}),
                 "hidden_reader_risk": hidden_reader_risk,
+                "heavy_reader_signal_trend": heavy_reader_signal_trend,
                 "reserved_window": reserved_window,
             }
         )
@@ -323,6 +340,10 @@ def build_cross_track_release_plan(tracks_root: str, last_n: int = 8) -> Dict[st
                 policy_directives.append(directive)
         if hidden_reader_risk >= 0.42:
             directive = f"{platform}에서는 얇음/반복 피로 추세가 높은 트랙을 가속하지 않고 홀드 또는 재배치한다"
+            if directive not in policy_directives:
+                policy_directives.append(directive)
+        if 0.0 < heavy_reader_signal_trend < 0.62:
+            directive = f"{platform}에서는 상위독자 체감 압력이 낮은 트랙을 가속하지 않고 홀드 또는 재배치한다"
             if directive not in policy_directives:
                 policy_directives.append(directive)
         if monopoly_risk >= 2.2:

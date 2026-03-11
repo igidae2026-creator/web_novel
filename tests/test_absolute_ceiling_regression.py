@@ -745,6 +745,39 @@ def test_portfolio_runtime_snapshot_penalizes_hidden_reader_risk_trend():
         assert snapshot["boost_ready_tracks"] == 0
 
 
+def test_portfolio_runtime_snapshot_penalizes_low_heavy_reader_signal_trend():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        track_dir = os.path.join(tracks_root, "track_signal")
+        os.makedirs(os.path.join(track_dir, "outputs"), exist_ok=True)
+        with open(os.path.join(track_dir, "track.json"), "w", encoding="utf-8") as f:
+            json.dump({"project": {"platform": "Munpia", "genre_bucket": "A"}}, f)
+        with open(os.path.join(track_dir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+            for _ in range(3):
+                f.write(json.dumps({"retention": {"predicted_next_episode": 0.81}, "content_ceiling": {"ceiling_total": 78}, "scores": {"repetition_score": 0.08}}) + "\n")
+        with open(os.path.join(track_dir, "outputs", "final_threshold_eval.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "criteria": {
+                        "autonomous_convergence_trend": {
+                            "details": {
+                                "hidden_reader_risk_trend": 0.12,
+                                "heavy_reader_signal_trend": 0.58,
+                            }
+                        }
+                    }
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        snapshot = build_portfolio_runtime_snapshot(tracks_root)
+
+        assert snapshot["tracks"][0]["heavy_reader_signal_trend"] == 0.58
+        assert snapshot["boost_ready_tracks"] == 0
+
+
 def test_cross_track_release_scheduler_staggers_platform_overlap():
     with tempfile.TemporaryDirectory() as tmpdir:
         tracks_root = os.path.join(tmpdir, "tracks")
@@ -810,7 +843,44 @@ def test_cross_track_release_holds_when_hidden_reader_risk_trend_is_high():
 
         assert plan["release_plan"][0]["action"] == "hold"
         assert plan["release_plan"][0]["hidden_reader_risk"] >= 0.44
-        assert any("얇음/반복 피로 추세" in directive for directive in plan["policy_directives"])
+
+
+def test_cross_track_release_holds_when_heavy_reader_signal_trend_is_low():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        tdir = os.path.join(tracks_root, "track_signal")
+        os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+        with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+            json.dump({"project": {"platform": "Munpia", "genre_bucket": "A"}}, f)
+        with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+            for _ in range(3):
+                f.write(json.dumps({
+                    "meta": {"event_plan": {"type": "arrival"}},
+                    "content_ceiling": {"ceiling_total": 75},
+                    "retention": {"predicted_next_episode": 0.78},
+                    "scores": {"repetition_score": 0.11},
+                }) + "\n")
+        with open(os.path.join(tdir, "outputs", "final_threshold_eval.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "criteria": {
+                        "autonomous_convergence_trend": {
+                            "details": {
+                                "heavy_reader_signal_trend": 0.59,
+                            }
+                        }
+                    }
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        plan = build_cross_track_release_plan(tracks_root)
+
+        assert plan["release_plan"][0]["action"] == "hold"
+        assert plan["release_plan"][0]["heavy_reader_signal_trend"] == 0.59
+        assert any("상위독자 체감 압력" in directive for directive in plan["policy_directives"])
 
 
 def test_platform_release_policy_respects_slot_pressure():

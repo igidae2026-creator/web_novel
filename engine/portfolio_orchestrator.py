@@ -42,6 +42,7 @@ def _track_log_snapshot(track_dir: str, last_n: int = 8) -> Dict[str, Any]:
             "fatigue_score": 0.0,
             "event_crowding": 0,
             "hidden_reader_risk": 0.0,
+            "heavy_reader_signal_trend": 0.0,
             "portfolio_score": 0.0,
         }
     retention = [float((row.get("retention", {}) or {}).get("predicted_next_episode", 0.0) or 0.0) for row in rows]
@@ -67,11 +68,13 @@ def _track_log_snapshot(track_dir: str, last_n: int = 8) -> Dict[str, Any]:
             except Exception:
                 continue
     hidden_reader_risk += _load_hidden_reader_risk_trend(threshold_payload, threshold_history)
+    heavy_reader_signal_trend = _load_heavy_reader_signal_trend(threshold_payload, threshold_history)
     portfolio_score = (
         mean_retention * 0.45
         + (mean_ceiling / 100.0) * 0.40
         + max(0.0, 1.0 - fatigue_score) * 0.15
         - min(0.18, hidden_reader_risk * 0.12)
+        - min(0.16, max(0.0, 0.72 - heavy_reader_signal_trend) * 0.28)
     )
     return {
         "mean_ceiling": mean_ceiling,
@@ -79,6 +82,7 @@ def _track_log_snapshot(track_dir: str, last_n: int = 8) -> Dict[str, Any]:
         "fatigue_score": fatigue_score,
         "event_crowding": event_crowding,
         "hidden_reader_risk": round(hidden_reader_risk, 4),
+        "heavy_reader_signal_trend": round(heavy_reader_signal_trend, 4),
         "portfolio_score": portfolio_score,
     }
 
@@ -89,6 +93,17 @@ def _load_hidden_reader_risk_trend(threshold_payload: Dict[str, Any], threshold_
     if "hidden_reader_risk_trend" in details:
         return max(0.0, float(details.get("hidden_reader_risk_trend", 0.0) or 0.0))
     return max(0.0, float(threshold_history.get("hidden_reader_risk_trend", 0.0) or 0.0))
+
+
+def _load_heavy_reader_signal_trend(threshold_payload: Dict[str, Any], threshold_history: Dict[str, Any]) -> float:
+    convergence = dict((threshold_payload.get("criteria", {}) or {}).get("autonomous_convergence_trend", {}) or {})
+    details = dict(convergence.get("details", {}) or {})
+    if "heavy_reader_signal_trend" in details:
+        return max(0.0, float(details.get("heavy_reader_signal_trend", 0.0) or 0.0))
+    fallback = threshold_history.get("heavy_reader_signal_trend")
+    if fallback is None:
+        return 1.0
+    return max(0.0, float(fallback or 0.0))
 
 
 def build_portfolio_runtime_snapshot(tracks_root: str, last_n: int = 8) -> Dict[str, Any]:
@@ -106,8 +121,8 @@ def build_portfolio_runtime_snapshot(tracks_root: str, last_n: int = 8) -> Dict[
         )
     if not tracks:
         return {"tracks": [], "boost_ready_tracks": 0, "stable_tracks": 0, "mean_portfolio_score": 0.0}
-    boost_ready = sum(1 for track in tracks if track["portfolio_score"] >= 0.68 and track["fatigue_score"] < 0.24 and track.get("hidden_reader_risk", 0.0) < 0.35)
-    stable = sum(1 for track in tracks if track["fatigue_score"] < 0.18 and track["event_crowding"] <= 3 and track.get("hidden_reader_risk", 0.0) < 0.3)
+    boost_ready = sum(1 for track in tracks if track["portfolio_score"] >= 0.68 and track["fatigue_score"] < 0.24 and track.get("hidden_reader_risk", 0.0) < 0.35 and track.get("heavy_reader_signal_trend", 0.0) >= 0.72)
+    stable = sum(1 for track in tracks if track["fatigue_score"] < 0.18 and track["event_crowding"] <= 3 and track.get("hidden_reader_risk", 0.0) < 0.3 and track.get("heavy_reader_signal_trend", 0.0) >= 0.72)
     mean_score = sum(float(track["portfolio_score"]) for track in tracks) / len(tracks)
     return {
         "tracks": tracks,
