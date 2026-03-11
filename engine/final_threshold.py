@@ -441,6 +441,7 @@ def _record_final_threshold_history(
             "ready_ratio": 0.0,
             "recent_fail_ratio": 0.0,
             "hidden_reader_risk_trend": 0.0,
+            "heavy_reader_signal_trend": 1.0,
             "history": [],
         }
     )
@@ -451,6 +452,7 @@ def _record_final_threshold_history(
         "failed_bundle_count": len(list(report.get("failed_bundles", []) or [])),
         "quality_lift_if_human_intervenes": _as_float(report.get("quality_lift_if_human_intervenes"), 1.0),
         "hidden_reader_risk_trend": _as_float(convergence_details.get("hidden_reader_risk_trend"), 0.0),
+        "heavy_reader_signal_trend": _as_float(convergence_details.get("heavy_reader_signal_trend"), 1.0),
     }
     history = (list(history_state.get("history", []) or []) + [item])[-12:]
     observed = int(history_state.get("observed", 0) or 0) + 1
@@ -458,12 +460,14 @@ def _record_final_threshold_history(
     recent = history[-4:]
     recent_fail_ratio = sum(1 for row in recent if not row.get("ready")) / max(1, len(recent))
     hidden_reader_risk_trend = sum(_as_float(row.get("hidden_reader_risk_trend"), 0.0) for row in recent) / max(1, len(recent))
+    heavy_reader_signal_trend = sum(_as_float(row.get("heavy_reader_signal_trend"), 1.0) for row in recent) / max(1, len(recent))
     history_state.update(
         {
             "observed": observed,
             "ready_ratio": round(ready_ratio, 4),
             "recent_fail_ratio": round(recent_fail_ratio, 4),
             "hidden_reader_risk_trend": round(hidden_reader_risk_trend, 4),
+            "heavy_reader_signal_trend": round(heavy_reader_signal_trend, 4),
             "history": history,
         }
     )
@@ -990,7 +994,9 @@ def evaluate_final_threshold_bundle(
         "cycle_context": cycle_context,
     }
     hidden_reader_risk_trend = _as_float((((criteria.get("autonomous_convergence_trend", {}) or {}).get("details", {}) or {}).get("hidden_reader_risk_trend")), 0.0)
+    heavy_reader_signal_trend = _as_float((((criteria.get("autonomous_convergence_trend", {}) or {}).get("details", {}) or {}).get("heavy_reader_signal_trend")), 1.0)
     reader_risk_trend_priority = "critical" if hidden_reader_risk_trend >= 0.5 else "high" if hidden_reader_risk_trend >= 0.35 else None
+    heavy_reader_signal_priority = "critical" if 0.0 < heavy_reader_signal_trend < 0.62 else "high" if 0.0 < heavy_reader_signal_trend < 0.72 else None
 
     safe_write_text(
         final_path,
@@ -1008,6 +1014,8 @@ def evaluate_final_threshold_bundle(
             "failed_bundles": failed_bundles,
             "hidden_reader_risk_trend": hidden_reader_risk_trend,
             "reader_risk_trend_priority": reader_risk_trend_priority,
+            "heavy_reader_signal_trend": heavy_reader_signal_trend,
+            "heavy_reader_signal_priority": heavy_reader_signal_priority,
         },
         safe_mode=safe_mode,
         project_dir_for_backup=out_dir,
@@ -1022,6 +1030,8 @@ def evaluate_final_threshold_bundle(
             "failed_bundles": failed_bundles,
             "hidden_reader_risk_trend": hidden_reader_risk_trend,
             "reader_risk_trend_priority": reader_risk_trend_priority,
+            "heavy_reader_signal_trend": heavy_reader_signal_trend,
+            "heavy_reader_signal_priority": heavy_reader_signal_priority,
         },
         safe_mode=safe_mode,
     )
@@ -1112,11 +1122,17 @@ def _sync_supervisor_threshold(
     if runtime_repairs.get("hook_bias") or runtime_repairs.get("payoff_bias") or runtime_repairs.get("rewrite_pressure"):
         reader_quality_priority = "critical" if runtime_repairs.get("hook_bias", 0.0) or runtime_repairs.get("rewrite_pressure") == "high" else "high"
     hidden_reader_risk_trend = _as_float((((report.get("criteria", {}) or {}).get("autonomous_convergence_trend", {}) or {}).get("details", {}) or {}).get("hidden_reader_risk_trend"), 0.0)
+    heavy_reader_signal_trend = _as_float((((report.get("criteria", {}) or {}).get("autonomous_convergence_trend", {}) or {}).get("details", {}) or {}).get("heavy_reader_signal_trend"), 1.0)
     reader_risk_trend_priority = None
     if hidden_reader_risk_trend >= 0.5:
         reader_risk_trend_priority = "critical"
     elif hidden_reader_risk_trend >= 0.35:
         reader_risk_trend_priority = "high"
+    heavy_reader_signal_priority = None
+    if 0.0 < heavy_reader_signal_trend < 0.62:
+        heavy_reader_signal_priority = "critical"
+    elif 0.0 < heavy_reader_signal_trend < 0.72:
+        heavy_reader_signal_priority = "high"
     state["final_threshold_ready"] = bool(report.get("final_threshold_ready"))
     state["final_threshold_path"] = os.path.join(report.get("out_dir", ""), FINAL_THRESHOLD_FILENAME)
     state["failed_criteria"] = list(report.get("failed_criteria", []) or [])
@@ -1124,9 +1140,11 @@ def _sync_supervisor_threshold(
     state["bundle_priority_mode"] = bundle_priority_mode
     state["reader_quality_priority"] = reader_quality_priority
     state["reader_risk_trend_priority"] = reader_risk_trend_priority
+    state["heavy_reader_signal_priority"] = heavy_reader_signal_priority
     state["runtime_repairs"] = runtime_repairs
     state["quality_lift_if_human_intervenes"] = _as_float(report.get("quality_lift_if_human_intervenes"), 1.0)
     state["hidden_reader_risk_trend"] = hidden_reader_risk_trend
+    state["heavy_reader_signal_trend"] = heavy_reader_signal_trend
     if report.get("final_threshold_ready"):
         if state.get("status") == "blocked" and state.get("stop_reason") == "final_threshold_failed":
             state["status"] = "running"

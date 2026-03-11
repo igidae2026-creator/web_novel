@@ -144,6 +144,7 @@ def test_final_threshold_bundle_passes_when_all_bundle_axes_close(tmp_path):
     track_state = json.load(open(track_dir / "state.json", "r", encoding="utf-8"))
     assert track_state["story_state_v2"]["control"]["final_threshold_history"]["observed"] == 1
     assert track_state["story_state_v2"]["control"]["final_threshold_history"]["history"][-1]["ready"] is True
+    assert track_state["story_state_v2"]["control"]["final_threshold_history"]["heavy_reader_signal_trend"] > 0.0
 
 
 def test_final_threshold_bundle_enqueues_only_failed_repairs(tmp_path):
@@ -311,6 +312,7 @@ def test_final_threshold_syncs_supervisor_with_report(tmp_path):
     assert supervisor["failed_bundles"] == report["failed_bundles"]
     assert supervisor["bundle_priority_mode"] in {None, "criterion_repair", "caution_repair", "critical_repair"}
     assert supervisor["reader_risk_trend_priority"] in {None, "high", "critical"}
+    assert supervisor["heavy_reader_signal_priority"] in {None, "high", "critical"}
 
 
 def test_final_threshold_can_use_soak_history_fallback(tmp_path):
@@ -466,10 +468,13 @@ def test_final_threshold_blocks_convergence_when_hidden_reader_risk_trend_stays_
     ft_row = next(row for row in metrics_rows if row.get("type") == "final_threshold_eval")
     assert ft_row["hidden_reader_risk_trend"] == 0.46
     assert ft_row["reader_risk_trend_priority"] == "high"
+    assert ft_row["heavy_reader_signal_trend"] == 0.78
+    assert ft_row["heavy_reader_signal_priority"] is None
     event_rows = [json.loads(line) for line in (out_dir / "events.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
     ft_event = next(row for row in event_rows if row.get("type") == "final_threshold_evaluated")
     assert ft_event["payload"]["hidden_reader_risk_trend"] == 0.46
     assert ft_event["payload"]["reader_risk_trend_priority"] == "high"
+    assert ft_event["payload"]["heavy_reader_signal_trend"] == 0.78
 
 
 def test_final_threshold_blocks_convergence_when_heavy_reader_signal_trend_stays_low(tmp_path):
@@ -548,6 +553,9 @@ def test_final_threshold_blocks_convergence_when_heavy_reader_signal_trend_stays
     assert repair["repair_context"]["heavy_reader_signal_trend"] == 0.61
     assert repair["repair_context"]["heavy_reader_signal_repair_required"] is True
     assert repair["repair_context"]["heavy_reader_signal_block_required"] is True
+    supervisor = load_supervisor_state(str(supervisor_path))
+    assert supervisor["heavy_reader_signal_priority"] == "critical"
+    assert supervisor["heavy_reader_signal_trend"] == 0.61
 
 
 def test_final_threshold_history_accumulates_ready_ratio(tmp_path):
@@ -565,10 +573,11 @@ def test_final_threshold_history_accumulates_ready_ratio(tmp_path):
                         "ready_ratio": 0.6667,
                         "recent_fail_ratio": 0.3333,
                         "hidden_reader_risk_trend": 0.14,
+                        "heavy_reader_signal_trend": 0.74,
                         "history": [
-                            {"ready": True, "failed_criteria_count": 0, "failed_bundle_count": 0, "quality_lift_if_human_intervenes": 0.04, "hidden_reader_risk_trend": 0.11},
-                            {"ready": False, "failed_criteria_count": 2, "failed_bundle_count": 1, "quality_lift_if_human_intervenes": 0.08, "hidden_reader_risk_trend": 0.19},
-                            {"ready": True, "failed_criteria_count": 0, "failed_bundle_count": 0, "quality_lift_if_human_intervenes": 0.03, "hidden_reader_risk_trend": 0.12},
+                            {"ready": True, "failed_criteria_count": 0, "failed_bundle_count": 0, "quality_lift_if_human_intervenes": 0.04, "hidden_reader_risk_trend": 0.11, "heavy_reader_signal_trend": 0.78},
+                            {"ready": False, "failed_criteria_count": 2, "failed_bundle_count": 1, "quality_lift_if_human_intervenes": 0.08, "hidden_reader_risk_trend": 0.19, "heavy_reader_signal_trend": 0.65},
+                            {"ready": True, "failed_criteria_count": 0, "failed_bundle_count": 0, "quality_lift_if_human_intervenes": 0.03, "hidden_reader_risk_trend": 0.12, "heavy_reader_signal_trend": 0.79},
                         ],
                     },
                     "soak_history": {
@@ -628,6 +637,7 @@ def test_final_threshold_history_accumulates_ready_ratio(tmp_path):
     assert report["threshold_history"]["ready_ratio"] == pytest.approx(0.5)
     assert report["threshold_history"]["recent_fail_ratio"] >= 0.25
     assert report["threshold_history"]["hidden_reader_risk_trend"] > 0.0
+    assert report["threshold_history"]["heavy_reader_signal_trend"] > 0.0
 
 
 def test_final_threshold_infers_protagonist_momentum_without_rich_cast_state(tmp_path):

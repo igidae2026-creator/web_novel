@@ -44,6 +44,8 @@ def test_supervisor_snapshot_conforms_to_contract():
     assert reason == "ok"
     assert "hidden_reader_risk_trend" in state
     assert "reader_risk_trend_priority" in state
+    assert "heavy_reader_signal_trend" in state
+    assert "heavy_reader_signal_priority" in state
 
 
 def test_policy_verdict_conforms_to_contract():
