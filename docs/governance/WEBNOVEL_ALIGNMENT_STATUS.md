@@ -83,6 +83,7 @@ Until Layer 3 is rewritten through the patch method for this repository, use the
 - episode runtime records now also embed hidden reader-risk summary, so per-episode metrics, system snapshots, and dashboards all share the same portfolio-level fatigue view
 - `autonomous_convergence_trend` failures now emit explicit hidden reader-risk trend repair context, so final-threshold artifacts explain not just that unattended convergence failed but whether long-run reader-fatigue pressure is the blocking cause
 - preflight gating now treats hidden reader-risk trend repair context as a direct block and runtime hardening signal, so convergence failures caused by long-run reader fatigue raise revision/retry/timeout pressure before the next episode draft begins
+- pipeline runtime repair application now also consumes hidden reader-risk trend repair context, so if generation still reaches the runtime layer it is forced toward stronger novelty/compression recovery and explicit fail-closed blocking metadata
 
 ## Conservative Completion Estimate
 
