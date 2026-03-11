@@ -35,10 +35,12 @@ def _default_supervisor_state() -> Dict[str, Any]:
         "reader_quality_priority": None,
         "reader_risk_trend_priority": None,
         "heavy_reader_signal_priority": None,
+        "platform_soak_priority": None,
         "runtime_repairs": {},
         "quality_lift_if_human_intervenes": None,
         "hidden_reader_risk_trend": 0.0,
         "heavy_reader_signal_trend": 0.0,
+        "platform_soak_pressure": 0.0,
     }
 
 
@@ -120,6 +122,8 @@ def update_supervisor_from_queue(
             "reader_risk_trend_priority": saved.get("reader_risk_trend_priority"),
             "heavy_reader_signal_trend": float(saved.get("heavy_reader_signal_trend", 0.0) or 0.0),
             "heavy_reader_signal_priority": saved.get("heavy_reader_signal_priority"),
+            "platform_soak_pressure": float(saved.get("platform_soak_pressure", 0.0) or 0.0),
+            "platform_soak_priority": saved.get("platform_soak_priority"),
             "failed_bundles": list(saved.get("failed_bundles", []) or []),
         },
         safe_mode=safe_mode,

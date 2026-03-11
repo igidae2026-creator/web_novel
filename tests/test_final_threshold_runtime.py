@@ -369,6 +369,47 @@ def test_run_final_threshold_repairs_blocks_generation_for_low_heavy_reader_sign
     assert control["heavy_reader_signal_trend"] == 0.58
 
 
+def test_run_final_threshold_repairs_blocks_generation_for_platform_soak_pressure(tmp_path):
+    track_dir = tmp_path / "domains" / "webnovel" / "tracks" / "track_soak"
+    out_dir = track_dir / "outputs"
+    out_dir.mkdir(parents=True)
+    with open(out_dir / "final_threshold_eval.json", "w", encoding="utf-8") as handle:
+        json.dump({"failed_bundles": [], "criteria": {}}, handle, ensure_ascii=False, indent=2)
+    with open(out_dir / "metrics.jsonl", "w", encoding="utf-8") as handle:
+        handle.write(json.dumps({"soak_report": {"tested": True, "steady_noop_ratio": 0.57, "dominant_mode": "volatile", "repair_rate_mean": 0.68, "heavy_reader_signal_floor_mean": 0.53}}, ensure_ascii=False) + "\n")
+
+    state = StateStore(str(track_dir / "state.json"), safe_mode=False, project_dir_for_backup=str(out_dir))
+    state.load()
+    queue_path = tmp_path / "job_queue.json"
+    save_job_queue_state(
+        {
+            "queue_status": "paused",
+            "jobs": [
+                {
+                    "job_id": "repair:track_soak:autonomous_convergence_trend",
+                    "job_type": "repair_final_threshold",
+                    "status": "queued",
+                    "priority": 20,
+                    "attempts": 0,
+                    "payload": {"track_id": "track_soak", "criterion": "autonomous_convergence_trend", "repair_action": "repair_autonomous_convergence_trend"},
+                    "result": None,
+                    "error": None,
+                }
+            ],
+        },
+        path=str(queue_path),
+        safe_mode=False,
+    )
+
+    result = run_final_threshold_repairs(state=state, out_dir=str(out_dir), track_id="track_soak", queue_path=str(queue_path), safe_mode=False)
+
+    assert result["blocked_generation"] is True
+    assert result["platform_soak_pressure"] >= 0.34
+    control = state.data["story_state_v2"]["control"]["final_threshold_repairs"]
+    assert control["platform_soak_priority"] == "critical"
+    assert control["platform_soak_pressure"] >= 0.34
+
+
 def test_build_fault_injection_report_marks_recovery_when_replay_is_consistent(tmp_path):
     out_dir = tmp_path / "outputs"
     out_dir.mkdir(parents=True)

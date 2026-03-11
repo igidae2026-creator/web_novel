@@ -71,6 +71,7 @@ def run_final_threshold_repairs(
     failed_bundles = _load_failed_bundles(out_dir)
     hidden_reader_risk_trend = _load_hidden_reader_risk_trend(out_dir)
     heavy_reader_signal_trend = _load_heavy_reader_signal_trend(out_dir)
+    platform_soak_pressure = _load_platform_soak_pressure(out_dir)
     high_risk = {
         "append_only_truth_lineage_replayability",
         "metaos_identity_priority",
@@ -119,9 +120,14 @@ def run_final_threshold_repairs(
     if 0.0 < heavy_reader_signal_trend < 0.72:
         threshold_control["heavy_reader_signal_priority"] = "critical" if heavy_reader_signal_trend < 0.62 else "high"
         threshold_control["heavy_reader_signal_trend"] = heavy_reader_signal_trend
+    if platform_soak_pressure >= 0.22:
+        threshold_control["platform_soak_priority"] = "critical" if platform_soak_pressure >= 0.34 else "high"
+        threshold_control["platform_soak_pressure"] = platform_soak_pressure
     if hidden_reader_risk_trend >= 0.5:
         blocked_generation = True
     if 0.0 < heavy_reader_signal_trend < 0.62:
+        blocked_generation = True
+    if platform_soak_pressure >= 0.34:
         blocked_generation = True
     threshold_control["applied"] = applied
     threshold_control["blocked_generation"] = blocked_generation
@@ -152,6 +158,7 @@ def run_final_threshold_repairs(
         "bundle_priority_mode": threshold_control["bundle_priority_mode"],
         "hidden_reader_risk_trend": hidden_reader_risk_trend,
         "heavy_reader_signal_trend": heavy_reader_signal_trend,
+        "platform_soak_pressure": platform_soak_pressure,
     }
 
 
@@ -195,6 +202,39 @@ def _load_heavy_reader_signal_trend(out_dir: str) -> float:
     if "heavy_reader_signal_trend" in details:
         return float(details.get("heavy_reader_signal_trend", 0.0) or 0.0)
     return 0.0
+
+
+def _load_platform_soak_pressure(out_dir: str) -> float:
+    metrics_path = os.path.join(out_dir, "metrics.jsonl")
+    if not os.path.exists(metrics_path):
+        return 0.0
+    try:
+        with open(metrics_path, "r", encoding="utf-8") as handle:
+            rows = [json.loads(line) for line in handle if line.strip()]
+    except Exception:
+        return 0.0
+    reports = []
+    for row in rows[-8:]:
+        soak_report = dict(row.get("soak_report") or (row.get("meta", {}) or {}).get("soak_report") or {})
+        if soak_report.get("tested"):
+            reports.append(soak_report)
+    if not reports:
+        return 0.0
+    steady_noop_ratio = sum(float(report.get("steady_noop_ratio", 0.0) or 0.0) for report in reports) / len(reports)
+    heavy_reader_signal_floor_mean = sum(float(report.get("heavy_reader_signal_floor_mean", 0.0) or 0.0) for report in reports) / len(reports)
+    repair_rate_mean = sum(float(report.get("repair_rate_mean", 0.0) or 0.0) for report in reports) / len(reports)
+    dominant_mode = str(reports[-1].get("dominant_mode") or "unknown")
+    pressure = max(
+        0.0,
+        min(
+            1.0,
+            max(0.0, 0.76 - steady_noop_ratio) * 0.55
+            + max(0.0, 0.72 - heavy_reader_signal_floor_mean) * 0.95
+            + max(0.0, 0.78 - repair_rate_mean) * 0.35
+            + (0.12 if dominant_mode == "volatile" else 0.05 if dominant_mode == "noop" else 0.0),
+        ),
+    )
+    return round(pressure, 4)
 
 
 def capability_budget_severity(failed_bundles: list[str]) -> str:

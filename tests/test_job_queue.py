@@ -212,3 +212,34 @@ def test_job_queue_prioritizes_low_heavy_reader_signal_repairs_first(tmp_path):
     state = load_job_queue_state(str(queue_path))
 
     assert state["jobs"][0]["job_id"] == "repair:track_a:autonomous_convergence_trend"
+
+
+def test_job_queue_prioritizes_platform_soak_repairs_first(tmp_path):
+    queue_path = tmp_path / "job_queue.json"
+    save_job_queue_state(
+        {
+            "queue_status": "paused",
+            "jobs": [
+                {
+                    "job_id": "repair:track_a:early_hook_strength",
+                    "job_type": "repair_final_threshold",
+                    "status": "queued",
+                    "priority": 40,
+                    "payload": {"track_id": "track_a", "repair_context": {"hook_bias": 0.14, "rewrite_pressure": "high"}},
+                },
+                {
+                    "job_id": "repair:track_a:autonomous_convergence_trend",
+                    "job_type": "repair_final_threshold",
+                    "status": "queued",
+                    "priority": 35,
+                    "payload": {"track_id": "track_a", "repair_context": {"platform_soak_pressure": 0.37}},
+                },
+            ],
+        },
+        path=str(queue_path),
+        safe_mode=False,
+    )
+
+    state = load_job_queue_state(str(queue_path))
+
+    assert state["jobs"][0]["job_id"] == "repair:track_a:autonomous_convergence_trend"
