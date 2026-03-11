@@ -89,6 +89,7 @@ Until Layer 3 is rewritten through the patch method for this repository, use the
 - track ordering and queue-loop bundle budgeting now also treat hidden reader-risk trend as a first-class signal, so long-run reader-fatigue pressure can reorder tracks and exhaust generation budget before weaker serial patterns spread portfolio-wide
 - queue history, queue state bundle-budgeting snapshots, and release runtime metadata now also persist hidden reader-risk trend summaries, so queue-only audits can see which tracks drove a budget block or release hold without reopening per-track threshold artifacts
 - soak history and autonomous convergence now also require a sustained heavy-reader signal trend, so steady/noop operation alone no longer counts as progress when upper-tier hook/payoff/fantasy pressure stays too weak over unattended cycles
+- low heavy-reader signal trend now propagates into repair context, job ordering, preflight blocking, and pipeline runtime hardening, so "operationally stable but not addictive enough" output is pushed into repair-first mode instead of being allowed to normalize
 
 ## Conservative Completion Estimate
 

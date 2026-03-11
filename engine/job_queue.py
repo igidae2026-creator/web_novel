@@ -125,6 +125,7 @@ def _queued_job_sort_key(job: Dict[str, Any]) -> tuple:
     repair_context = dict(job.get("payload", {}).get("repair_context") or {})
     repair_rank = 0 if job_type == "repair_final_threshold" else 1
     trend_rank = 0 if repair_context.get("hidden_reader_risk_trend", 0.0) >= 0.35 else 1
+    signal_rank = 0 if (0.0 < float(repair_context.get("heavy_reader_signal_trend", 1.0) or 1.0) < 0.72) else 1
     business_rank = 0 if repair_context.get("business_feedback_rebind_required") else 1
     reader_quality_rank = 0 if (
         repair_context.get("hook_bias")
@@ -133,6 +134,7 @@ def _queued_job_sort_key(job: Dict[str, Any]) -> tuple:
     ) else 1
     return (
         trend_rank,
+        signal_rank,
         business_rank,
         reader_quality_rank,
         int(job.get("priority", 100) or 100),

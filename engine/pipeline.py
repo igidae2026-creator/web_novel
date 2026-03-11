@@ -283,6 +283,7 @@ def _apply_final_threshold_runtime_repairs(cfg: dict, state_data: dict, knobs: d
         applied["human_lift_sampling_required"] = True
 
     hidden_reader_risk_trend = float(repairs.get("hidden_reader_risk_trend", 0.0) or 0.0)
+    heavy_reader_signal_trend = float(repairs.get("heavy_reader_signal_trend", 0.0) or 0.0)
     if repairs.get("reader_risk_trend_repair_required"):
         adjusted_cfg["limits"]["max_revision_passes"] = max(int(adjusted_cfg["limits"].get("max_revision_passes", 2) or 2), 3)
         adjusted_cfg["limits"]["causal_repair_retry_budget"] = max(int(adjusted_cfg["limits"].get("causal_repair_retry_budget", 2) or 2), 3)
@@ -298,6 +299,23 @@ def _apply_final_threshold_runtime_repairs(cfg: dict, state_data: dict, knobs: d
         adjusted_cfg["model"]["mode"] = "priority"
         adjusted_knobs["reader_risk_trend_block_required"] = True
         applied["reader_risk_trend_block_required"] = True
+
+    if repairs.get("heavy_reader_signal_repair_required"):
+        adjusted_cfg["limits"]["max_revision_passes"] = max(int(adjusted_cfg["limits"].get("max_revision_passes", 2) or 2), 3)
+        adjusted_cfg["limits"]["causal_repair_retry_budget"] = max(int(adjusted_cfg["limits"].get("causal_repair_retry_budget", 2) or 2), 3)
+        adjusted_cfg["limits"]["request_timeout_seconds"] = max(int(adjusted_cfg["limits"].get("request_timeout_seconds", 150) or 150), 180)
+        adjusted_cfg["model"]["request_timeout_seconds"] = adjusted_cfg["limits"]["request_timeout_seconds"]
+        adjusted_cfg["model"]["mode"] = "priority"
+        adjusted_knobs["hook_intensity"] = min(0.99, float(adjusted_knobs.get("hook_intensity", 0.7) or 0.7) + 0.1)
+        adjusted_knobs["payoff_intensity"] = min(0.99, float(adjusted_knobs.get("payoff_intensity", 0.7) or 0.7) + 0.1)
+        adjusted_knobs["novelty_boost"] = min(0.99, float(adjusted_knobs.get("novelty_boost", 0.5) or 0.5) + 0.08)
+        applied["heavy_reader_signal_repair_required"] = True
+        applied["heavy_reader_signal_trend"] = round(heavy_reader_signal_trend, 4)
+
+    if repairs.get("heavy_reader_signal_block_required"):
+        adjusted_cfg["model"]["mode"] = "priority"
+        adjusted_knobs["heavy_reader_signal_block_required"] = True
+        applied["heavy_reader_signal_block_required"] = True
 
     return adjusted_cfg, adjusted_knobs, applied
 

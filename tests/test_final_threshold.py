@@ -544,6 +544,10 @@ def test_final_threshold_blocks_convergence_when_heavy_reader_signal_trend_stays
     assert report["criteria"]["soak_steady_noop_dominance"]["passed"] is True
     assert report["criteria"]["autonomous_convergence_trend"]["passed"] is False
     assert report["criteria"]["autonomous_convergence_trend"]["details"]["heavy_reader_signal_trend"] == 0.61
+    repair = next(item for item in report["next_required_repairs"] if item["criterion"] == "autonomous_convergence_trend")
+    assert repair["repair_context"]["heavy_reader_signal_trend"] == 0.61
+    assert repair["repair_context"]["heavy_reader_signal_repair_required"] is True
+    assert repair["repair_context"]["heavy_reader_signal_block_required"] is True
 
 
 def test_final_threshold_history_accumulates_ready_ratio(tmp_path):
