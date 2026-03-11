@@ -17,6 +17,8 @@ from engine.model_config import load_models, get_model
 from engine.event_log import log_event
 
 QUEUE_STATE_PATH = os.path.join("domains", "webnovel", "tracks", "queue_state.json")
+CRITICAL_BUNDLES = {"truth_capability", "recovery_capability"}
+CAUTION_BUNDLES = {"judgment_capability", "operations_capability", "generation_capability", "self_evolution_capability"}
 
 def _ensure_dir(p: str):
     os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -48,6 +50,52 @@ def _sync_runtime_sidecars(state: Dict[str, Any], safe_mode: bool = True) -> Non
     except Exception:
         pass
 
+def _load_failed_bundles(track_dir: str) -> List[str]:
+    path = os.path.join(track_dir, "outputs", "final_threshold_eval.json")
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return []
+    return list(payload.get("failed_bundles", []) or [])
+
+
+def _load_failed_criteria(track_dir: str) -> List[str]:
+    path = os.path.join(track_dir, "outputs", "final_threshold_eval.json")
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return []
+    return list(payload.get("failed_criteria", []) or [])
+
+
+def _track_priority_key(track_dir: str) -> tuple:
+    bundles = _load_failed_bundles(track_dir)
+    criteria = _load_failed_criteria(track_dir)
+    critical_count = sum(1 for bundle in bundles if bundle in CRITICAL_BUNDLES)
+    caution_count = sum(1 for bundle in bundles if bundle in CAUTION_BUNDLES)
+    reader_quality_count = sum(
+        1
+        for criterion in criteria
+        if criterion in {
+            "early_hook_strength",
+            "episode_end_hook_strength",
+            "long_arc_payoff_stability",
+            "protagonist_fantasy_persistence",
+            "reader_retention_stability",
+            "serialization_fatigue_control",
+        }
+    )
+    other_count = max(0, len(bundles) - critical_count - caution_count)
+    has_eval = os.path.exists(os.path.join(track_dir, "outputs", "final_threshold_eval.json"))
+    return (-critical_count, -caution_count, -reader_quality_count, -other_count, 0 if has_eval else 1, os.path.basename(track_dir))
+
+
 def build_track_dirs(tracks_root: str = os.path.join("domains","webnovel","tracks")) -> List[str]:
     out=[]
     if not os.path.exists(tracks_root):
@@ -56,7 +104,7 @@ def build_track_dirs(tracks_root: str = os.path.join("domains","webnovel","track
         p=os.path.join(tracks_root,d)
         if os.path.isdir(p) and os.path.exists(os.path.join(p,"track.json")):
             out.append(p)
-    return out
+    return sorted(out, key=_track_priority_key)
 
 def start_queue(track_dirs: Optional[List[str]] = None, cfg: Optional[dict] = None) -> Dict[str, Any]:
     state = load_queue_state()

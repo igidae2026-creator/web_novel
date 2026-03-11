@@ -65,6 +65,61 @@ def _quality_feedback_directives(quality_feedback: dict | None) -> str:
     return "\n".join(directives)
 
 
+def _reader_pressure_directives(story_state: dict | None) -> str:
+    payload = dict(story_state or {})
+    reader_quality = dict(payload.get("reader_quality_debt", {}) or {})
+    market_pressure = dict(payload.get("market_feedback_pressure", {}) or {})
+    directives: list[str] = []
+
+    debt = dict(reader_quality.get("reader_quality_debt", {}) or {})
+    if float(debt.get("hook_debt", 0.0) or 0.0) > 0:
+        directives.append("- 초반 1~3문단 안에 욕망, 위험, 즉시 손실 가능성을 함께 배치해 첫 클릭 독자를 바로 붙잡을 것")
+    if float(debt.get("payoff_debt", 0.0) or 0.0) > 0:
+        directives.append("- 이번 회차 안에 약속된 보상, 정보 회수, 관계 후폭풍 중 하나를 반드시 가시화해 payoff 체감을 올릴 것")
+    if float(debt.get("fatigue_debt", 0.0) or 0.0) > 0:
+        directives.append("- 같은 감정/대립 반복을 줄이고 장면 압축과 전개 변주를 늘려 연재 피로를 낮출 것")
+    if float(debt.get("retention_debt", 0.0) or 0.0) > 0:
+        directives.append("- 회차 말미에 열린 질문, 즉시 위험, 다음 선택 비용을 함께 남겨 다음 화 클릭 손실감을 만들 것")
+    if float(debt.get("thinness_debt", 0.0) or 0.0) > 0:
+        directives.append("- 장면이 얇게 흐르지 않도록 욕망, 대가, 위협, 관계 압박 중 최소 두 축을 같은 장면 안에서 동시에 체감시키고 밀도를 올릴 것")
+    if float(debt.get("repetition_debt", 0.0) or 0.0) > 0:
+        directives.append("- 최근과 같은 훅, 반전, 감정 반응, 대립 패턴을 복제하지 말고 사건 방식과 감정 결을 분명히 변주할 것")
+    if float(debt.get("deja_vu_debt", 0.0) or 0.0) > 0:
+        directives.append("- 기시감이 나지 않도록 익숙한 압박을 반복하지 말고 판세를 비트는 새로운 정보, 선택 구조, 관계 축을 한 번은 전면화할 것")
+    if float(debt.get("fake_urgency_debt", 0.0) or 0.0) > 0:
+        directives.append("- 말로만 급박하게 굴지 말고 이번 회차 안에서 실제 손실, 선택 비용, 되돌릴 수 없는 전진 중 하나를 발생시킬 것")
+    if float(debt.get("compression_debt", 0.0) or 0.0) > 0:
+        directives.append("- 이미 이해된 설명을 반복하지 말고 문단을 더 압축해 핵심 장면 도착 시간을 앞당길 것")
+
+    if market_pressure:
+        if float(market_pressure.get("market_pressure_response", 0.0) or 0.0) > 0:
+            directives.append("- 최근 시장 반응이 약하므로 회차 체급이 보이게 갈등 비용과 후킹 강도를 평시보다 더 높일 것")
+        if float(market_pressure.get("reader_exit_risk_response", 0.0) or 0.0) > 0:
+            directives.append("- 이탈 위험이 높으므로 지연 설명을 줄이고 핵심 장면 도착 시간을 앞당길 것")
+        if "campaign_roi_response" in market_pressure:
+            directives.append("- 기존 패턴의 효율이 약하므로 익숙한 장식 반복 대신 새로운 보상 변수나 판세 전환을 한 번 전면화할 것")
+
+    if not directives:
+        return "- 상위독자가 첫 화부터 따라붙을 만큼 초반 흡입력, 회차 말미 훅, payoff 압력을 함께 유지할 것"
+    return "\n".join(directives)
+
+
+def _arc_pressure_directives(story_state: dict | None) -> str:
+    payload = dict(story_state or {})
+    arc_pressure = dict(payload.get("arc_pressure", {}) or {})
+    debt = dict(arc_pressure.get("arc_pressure", {}) or {})
+    directives: list[str] = []
+
+    if float(debt.get("payoff_debt", 0.0) or 0.0) > 0:
+        directives.append("- 장기 약속 회수가 밀렸으므로 이번 회차 안에 보상, 정산, 진실 공개 중 하나를 확실히 전진시킬 것")
+    if float(debt.get("momentum_debt", 0.0) or 0.0) > 0:
+        directives.append("- 주인공이 끌려가기만 하지 않도록 대가를 치르더라도 판을 움직이는 주도적 선택이나 역습의 발판을 반드시 남길 것")
+
+    if not directives:
+        return "- 장기 아크 보상과 주인공 판타지 상승감을 동시에 유지할 것"
+    return "\n".join(directives)
+
+
 class PROMPTS:
     @staticmethod
     def master_outline(cfg: dict, ext_snapshot: dict, sub_engine_key: str) -> str:
@@ -176,6 +231,10 @@ class PROMPTS:
 - 플랫폼 페이싱, 유료구간 압력, 독자 신뢰를 해치지 않도록 연재형 보상 구조를 유지할 것
 - 다른 트랙에서 이미 과밀한 패턴은 피하고, 포트폴리오 차원의 차별화를 유지할 것
 - 포트폴리오 정책 지시가 있으면 우선 반영하고, 교차 트랙 간 위험 분산과 출시 간섭 완화를 함께 고려할 것
+- 추가 상위독자 압력 지시:
+{_reader_pressure_directives(story_state)}
+- 장기 아크 압력 지시:
+{_arc_pressure_directives(story_state)}
 """
 
     @staticmethod
@@ -209,6 +268,10 @@ class PROMPTS:
 - 반복 최소화
 - 마지막은 강한 클리프행어
 - 주인공은 욕망 때문에 움직이고 공포 때문에 망설이며 약점 때문에 비용을 치러야 한다
+- 상위독자 압력 지시:
+{_reader_pressure_directives(story_state)}
+- 장기 아크 압력 지시:
+{_arc_pressure_directives(story_state)}
 - 본문 길이는 대략 {nv['words_per_episode_min']}~{nv['words_per_episode_max']}자 수준의 한국어 분량을 목표로 한다(토큰 언급 금지)
 
 출력 형식: STRICT JSON ONLY
@@ -277,6 +340,10 @@ class PROMPTS:
 추가 규칙:
 - `quality_feedback.failed_checks`에 적힌 항목은 직접 보수할 것
 {_quality_feedback_directives(quality_feedback)}
+- 상위독자 압력 지시:
+{_reader_pressure_directives(story_state)}
+- 장기 아크 압력 지시:
+{_arc_pressure_directives(story_state)}
 
 출력: STRICT JSON ONLY (동일 필드 유지)
 """

@@ -41,10 +41,17 @@ def update_reward_serialization(
     serialization["retention_pressure"] = min(10, len(pending[:3]) + int(rewards["reward_density"] >= 6) + 4)
     serialization["sustainability"] = min(10, max(1, 7 - max(0, rewards["reward_density"] - 7) + min(2, len(pending))))
     serialization["novelty_budget"] = min(10, max(1, int(serialization.get("novelty_budget", 5) or 5) + (1 if event_type in {"arrival", "power_shift", "collapse"} else 0) - (1 if event_type in {"misunderstanding"} else 0)))
+    arc_pressure = story_state.setdefault("control", {}).setdefault("arc_pressure", {"payoff_debt": 0.0, "momentum_debt": 0.0, "history": []})
 
     state["story_state_v2"] = story_state
     sync_story_state(state)
     promise_graph = update_promise_payoff_graph(state, episode=episode, event_plan=event_plan, score_obj=score_obj or {})
+    payoff_debt = round(max(0.0, 0.72 - float(promise_graph.get("payoff_integrity", 0.0) or 0.0)), 4)
+    history = list(arc_pressure.get("history", []) or [])
+    history.append({"episode": int(episode), "payoff_debt": payoff_debt, "payoff_integrity": promise_graph.get("payoff_integrity", 0.0)})
+    arc_pressure["history"] = history[-10:]
+    blend = 0.0 if len(history) == 1 else 0.74
+    arc_pressure["payoff_debt"] = round(float(arc_pressure.get("payoff_debt", 0.0) or 0.0) * blend + payoff_debt * (1.0 - blend), 4)
     market_bundle = update_market_serialization(state, episode=episode, cfg=cfg, event_plan=event_plan)
     return {
         "rewards": rewards,

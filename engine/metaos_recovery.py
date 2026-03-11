@@ -3,6 +3,14 @@ from __future__ import annotations
 from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 
+def _freeze(value: Any) -> Any:
+    if isinstance(value, dict):
+        return tuple(sorted((k, _freeze(v)) for k, v in value.items()))
+    if isinstance(value, list):
+        return tuple(_freeze(item) for item in value)
+    return value
+
+
 def detect_duplicate_events(events: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     seen: set[Tuple[Any, Any, Any]] = set()
     duplicates: List[Dict[str, Any]] = []
@@ -10,7 +18,7 @@ def detect_duplicate_events(events: Sequence[Dict[str, Any]]) -> List[Dict[str, 
         key = (
             event.get("type"),
             event.get("ts"),
-            tuple(sorted((event.get("payload") or {}).items())) if isinstance(event.get("payload"), dict) else None,
+            _freeze(event.get("payload")) if isinstance(event.get("payload"), dict) else None,
         )
         if key in seen:
             duplicates.append(event)
@@ -20,8 +28,12 @@ def detect_duplicate_events(events: Sequence[Dict[str, Any]]) -> List[Dict[str, 
 
 
 def snapshot_staleness(snapshot: Dict[str, Any], queue_state: Dict[str, Any]) -> Dict[str, Any]:
-    queue_index = int((queue_state or {}).get("last_sync", {}).get("current_index", queue_state.get("current_index", 0)) or 0)
-    snapshot_index = int((snapshot or {}).get("last_sync", {}).get("current_index", snapshot.get("current_index", 0)) or 0)
+    queue = dict(queue_state or {})
+    snapshot_obj = dict(snapshot or {})
+    queue_last_sync = dict(queue.get("last_sync") or {})
+    snapshot_last_sync = dict(snapshot_obj.get("last_sync") or {})
+    queue_index = int(queue_last_sync.get("current_index", queue.get("current_index", 0)) or 0)
+    snapshot_index = int(snapshot_last_sync.get("current_index", snapshot_obj.get("current_index", 0)) or 0)
     stale = snapshot_index < queue_index
     return {
         "stale": stale,

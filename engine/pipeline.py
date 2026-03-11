@@ -9,6 +9,7 @@ from .fatigue import fatigue_index, fatigue_directives
 from .viral import validate_viral
 from .json_parse import parse_json_strict
 from .prompts import PROMPTS
+from .preflight_gate import apply_preflight_runtime_policy, assess_preflight_bundle, record_preflight_bundle
 from .profile import load_profiles, select_profile
 from .character_arc import prepare_character_arc, character_prompt_payload, update_character_arc
 from .conflict_memory import prepare_conflict_memory, conflict_prompt_payload, update_conflict_memory
@@ -42,7 +43,13 @@ from .causal_repair import (
     store_causal_repair_plan,
 )
 from .portfolio_memory import portfolio_prompt_payload, update_portfolio_memory
-from .reliability import simulate_long_run, update_system_status
+from .reliability import (
+    estimate_human_quality_lift,
+    record_soak_history,
+    simulate_long_run,
+    summarize_soak_report,
+    update_system_status,
+)
 from .runtime_config import load_runtime_config_into_cfg, write_system_status_snapshot
 from analytics.content_ceiling import evaluate_episode
 
@@ -191,6 +198,216 @@ def _apply_external(cfg: dict, knobs: dict, ext: ExternalRankSignals, episode: i
     knobs["external_event"] = event
     return knobs
 
+
+def _apply_final_threshold_runtime_repairs(cfg: dict, state_data: dict, knobs: dict) -> tuple[dict, dict, dict]:
+    story_state = dict(state_data.get("story_state_v2", {}) or {})
+    control = dict(story_state.get("control", {}) or {})
+    repairs = dict(control.get("final_threshold_repairs", {}) or {})
+    if not repairs:
+        return cfg, knobs, {}
+
+    adjusted_cfg = {
+        **cfg,
+        "limits": dict(cfg.get("limits", {}) or {}),
+        "model": dict(cfg.get("model", {}) or {}),
+    }
+    adjusted_knobs = dict(knobs or {})
+    applied: dict = {}
+
+    hook_bias = float(repairs.get("hook_bias", 0.0) or 0.0)
+    if hook_bias:
+        adjusted_knobs["hook_intensity"] = min(0.99, float(adjusted_knobs.get("hook_intensity", 0.7) or 0.7) + hook_bias)
+        applied["hook_bias"] = round(hook_bias, 4)
+
+    payoff_bias = float(repairs.get("payoff_bias", 0.0) or 0.0)
+    if payoff_bias:
+        adjusted_knobs["payoff_intensity"] = min(0.99, float(adjusted_knobs.get("payoff_intensity", 0.7) or 0.7) + payoff_bias)
+        applied["payoff_bias"] = round(payoff_bias, 4)
+
+    rewrite_pressure = str(repairs.get("rewrite_pressure", "") or "").strip().lower()
+    if rewrite_pressure:
+        if rewrite_pressure == "high":
+            adjusted_cfg["limits"]["max_revision_passes"] = max(int(adjusted_cfg["limits"].get("max_revision_passes", 2) or 2), 3)
+            adjusted_cfg["limits"]["causal_repair_retry_budget"] = max(int(adjusted_cfg["limits"].get("causal_repair_retry_budget", 2) or 2), 3)
+        applied["rewrite_pressure"] = rewrite_pressure
+
+    if repairs.get("world_lock"):
+        adjusted_knobs["novelty_boost"] = max(0.2, float(adjusted_knobs.get("novelty_boost", 0.5) or 0.5) - 0.08)
+        adjusted_knobs["world_lock"] = True
+        applied["world_lock"] = True
+
+    causal_priority = str(repairs.get("causal_repair_priority", "") or "").strip().lower()
+    if causal_priority:
+        if causal_priority == "critical":
+            adjusted_cfg["limits"]["causal_repair_retry_budget"] = max(int(adjusted_cfg["limits"].get("causal_repair_retry_budget", 2) or 2), 4)
+            adjusted_cfg["model"]["mode"] = "priority"
+        applied["causal_repair_priority"] = causal_priority
+
+    if repairs.get("market_rebind_required"):
+        adjusted_cfg["model"]["mode"] = "priority"
+        adjusted_knobs["market_rebind_required"] = True
+        applied["market_rebind_required"] = True
+
+    if repairs.get("business_feedback_rebind_required"):
+        adjusted_cfg["limits"]["max_revision_passes"] = max(int(adjusted_cfg["limits"].get("max_revision_passes", 2) or 2), 3)
+        adjusted_cfg["limits"]["causal_repair_retry_budget"] = max(int(adjusted_cfg["limits"].get("causal_repair_retry_budget", 2) or 2), 3)
+        adjusted_cfg["limits"]["request_timeout_seconds"] = max(int(adjusted_cfg["limits"].get("request_timeout_seconds", 150) or 150), 180)
+        adjusted_cfg["model"]["request_timeout_seconds"] = adjusted_cfg["limits"]["request_timeout_seconds"]
+        adjusted_cfg["model"]["mode"] = "priority"
+        adjusted_knobs["business_feedback_rebind_required"] = True
+        applied["business_feedback_rebind_required"] = True
+
+    if repairs.get("scope_policy_rebind_required"):
+        adjusted_cfg["model"]["mode"] = "priority"
+        applied["scope_policy_rebind_required"] = True
+
+    if repairs.get("human_lift_sampling_required"):
+        adjusted_cfg["limits"]["max_revision_passes"] = max(int(adjusted_cfg["limits"].get("max_revision_passes", 2) or 2), 2)
+        adjusted_cfg["model"]["mode"] = "priority"
+        applied["human_lift_sampling_required"] = True
+
+    return adjusted_cfg, adjusted_knobs, applied
+
+
+def _inject_runtime_repair_story_context(story_state: dict, repairs_applied: dict) -> dict:
+    if not repairs_applied:
+        return story_state
+    enriched = dict(story_state or {})
+    market_payload = dict(enriched.get("market", {}) or {})
+    market_payload["runtime_repairs"] = dict(repairs_applied)
+    market_payload["rebind_required"] = bool(
+        repairs_applied.get("market_rebind_required") or repairs_applied.get("business_feedback_rebind_required")
+    )
+    enriched["market"] = market_payload
+    enriched["runtime_repairs"] = dict(repairs_applied)
+    return enriched
+
+
+def _apply_reader_quality_debt(cfg: dict, state_data: dict, knobs: dict) -> tuple[dict, dict]:
+    story_state = dict(state_data.get("story_state_v2", {}) or {})
+    control = dict(story_state.get("control", {}) or {})
+    reader_quality = dict(control.get("reader_quality", {}) or {})
+    if not reader_quality:
+        return knobs, {}
+
+    adjusted_knobs = dict(knobs or {})
+    applied: dict = {}
+    hook_debt = float(reader_quality.get("hook_debt", 0.0) or 0.0)
+    payoff_debt = float(reader_quality.get("payoff_debt", 0.0) or 0.0)
+    fatigue_debt = float(reader_quality.get("fatigue_debt", 0.0) or 0.0)
+    retention_debt = float(reader_quality.get("retention_debt", 0.0) or 0.0)
+    thinness_debt = float(reader_quality.get("thinness_debt", 0.0) or 0.0)
+    repetition_debt = float(reader_quality.get("repetition_debt", 0.0) or 0.0)
+    deja_vu_debt = float(reader_quality.get("deja_vu_debt", 0.0) or 0.0)
+    fake_urgency_debt = float(reader_quality.get("fake_urgency_debt", 0.0) or 0.0)
+    compression_debt = float(reader_quality.get("compression_debt", 0.0) or 0.0)
+
+    if hook_debt > 0:
+        delta = min(0.16, hook_debt * 0.6)
+        adjusted_knobs["hook_intensity"] = min(0.99, float(adjusted_knobs.get("hook_intensity", 0.7) or 0.7) + delta)
+        applied["hook_debt_response"] = round(delta, 4)
+    if payoff_debt > 0:
+        delta = min(0.14, payoff_debt * 0.55)
+        adjusted_knobs["payoff_intensity"] = min(0.99, float(adjusted_knobs.get("payoff_intensity", 0.7) or 0.7) + delta)
+        applied["payoff_debt_response"] = round(delta, 4)
+    if fatigue_debt > 0:
+        delta = min(0.14, fatigue_debt * 0.5)
+        adjusted_knobs["compression"] = min(0.95, float(adjusted_knobs.get("compression", 0.6) or 0.6) + delta)
+        adjusted_knobs["novelty_boost"] = min(0.95, float(adjusted_knobs.get("novelty_boost", 0.5) or 0.5) + min(0.1, fatigue_debt * 0.35))
+        applied["fatigue_debt_response"] = round(delta, 4)
+    if retention_debt > 0:
+        delta = min(0.12, retention_debt * 0.45)
+        adjusted_knobs["hook_intensity"] = min(0.99, float(adjusted_knobs.get("hook_intensity", 0.7) or 0.7) + delta)
+        adjusted_knobs["compression"] = min(0.95, float(adjusted_knobs.get("compression", 0.6) or 0.6) + min(0.08, retention_debt * 0.3))
+        applied["retention_debt_response"] = round(delta, 4)
+    if thinness_debt > 0:
+        adjusted_knobs["hook_intensity"] = min(0.99, float(adjusted_knobs.get("hook_intensity", 0.7) or 0.7) + min(0.1, thinness_debt * 0.45))
+        adjusted_knobs["payoff_intensity"] = min(0.99, float(adjusted_knobs.get("payoff_intensity", 0.7) or 0.7) + min(0.08, thinness_debt * 0.35))
+        applied["thinness_debt_response"] = round(min(0.1, thinness_debt * 0.45), 4)
+    if repetition_debt > 0:
+        adjusted_knobs["novelty_boost"] = min(0.95, float(adjusted_knobs.get("novelty_boost", 0.5) or 0.5) + min(0.12, repetition_debt * 0.5))
+        adjusted_knobs["compression"] = min(0.95, float(adjusted_knobs.get("compression", 0.6) or 0.6) + min(0.08, repetition_debt * 0.35))
+        applied["repetition_debt_response"] = round(min(0.12, repetition_debt * 0.5), 4)
+    if deja_vu_debt > 0:
+        adjusted_knobs["novelty_boost"] = min(0.95, float(adjusted_knobs.get("novelty_boost", 0.5) or 0.5) + min(0.14, deja_vu_debt * 0.55))
+        adjusted_knobs["hook_intensity"] = min(0.99, float(adjusted_knobs.get("hook_intensity", 0.7) or 0.7) + min(0.05, deja_vu_debt * 0.25))
+        applied["deja_vu_debt_response"] = round(min(0.14, deja_vu_debt * 0.55), 4)
+    if fake_urgency_debt > 0:
+        adjusted_knobs["payoff_intensity"] = min(0.99, float(adjusted_knobs.get("payoff_intensity", 0.7) or 0.7) + min(0.12, fake_urgency_debt * 0.5))
+        adjusted_knobs["compression"] = min(0.95, float(adjusted_knobs.get("compression", 0.6) or 0.6) + min(0.06, fake_urgency_debt * 0.25))
+        applied["fake_urgency_debt_response"] = round(min(0.12, fake_urgency_debt * 0.5), 4)
+    if compression_debt > 0:
+        adjusted_knobs["compression"] = min(0.97, float(adjusted_knobs.get("compression", 0.6) or 0.6) + min(0.14, compression_debt * 0.5))
+        applied["compression_debt_response"] = round(min(0.14, compression_debt * 0.5), 4)
+
+    if applied:
+        applied["reader_quality_debt"] = {
+            "hook_debt": round(hook_debt, 4),
+            "payoff_debt": round(payoff_debt, 4),
+            "fatigue_debt": round(fatigue_debt, 4),
+            "retention_debt": round(retention_debt, 4),
+            "thinness_debt": round(thinness_debt, 4),
+            "repetition_debt": round(repetition_debt, 4),
+            "deja_vu_debt": round(deja_vu_debt, 4),
+            "fake_urgency_debt": round(fake_urgency_debt, 4),
+            "compression_debt": round(compression_debt, 4),
+        }
+    return adjusted_knobs, applied
+
+
+def _apply_market_feedback_pressure(state_data: dict, knobs: dict) -> tuple[dict, dict]:
+    story_state = dict(state_data.get("story_state_v2", {}) or {})
+    market = dict(story_state.get("market", {}) or {})
+    if not market:
+        return knobs, {}
+
+    adjusted_knobs = dict(knobs or {})
+    applied: dict = {}
+    market_pressure = float(market.get("market_pressure", 0.0) or 0.0)
+    exit_risk = float(market.get("reader_exit_risk", 0.0) or 0.0)
+    campaign_roi = float(market.get("campaign_roi_signal", 0.0) or 0.0)
+    if market_pressure > 0:
+        delta = min(0.12, market_pressure / 10.0 * 0.18)
+        adjusted_knobs["hook_intensity"] = min(0.99, float(adjusted_knobs.get("hook_intensity", 0.7) or 0.7) + delta)
+        adjusted_knobs["payoff_intensity"] = min(0.99, float(adjusted_knobs.get("payoff_intensity", 0.7) or 0.7) + min(0.1, delta * 0.8))
+        applied["market_pressure_response"] = round(delta, 4)
+    if exit_risk > 0:
+        delta = min(0.1, exit_risk / 10.0 * 0.16)
+        adjusted_knobs["compression"] = min(0.95, float(adjusted_knobs.get("compression", 0.6) or 0.6) + delta)
+        applied["reader_exit_risk_response"] = round(delta, 4)
+    if campaign_roi < 0.2 and market.get("market_feedback_active"):
+        adjusted_knobs["novelty_boost"] = min(0.95, float(adjusted_knobs.get("novelty_boost", 0.5) or 0.5) + 0.08)
+        applied["campaign_roi_response"] = round(campaign_roi, 4)
+    return adjusted_knobs, applied
+
+
+def _apply_arc_pressure(state_data: dict, knobs: dict) -> tuple[dict, dict]:
+    story_state = dict(state_data.get("story_state_v2", {}) or {})
+    control = dict(story_state.get("control", {}) or {})
+    arc_pressure = dict(control.get("arc_pressure", {}) or {})
+    if not arc_pressure:
+        return knobs, {}
+
+    adjusted_knobs = dict(knobs or {})
+    applied: dict = {}
+    payoff_debt = float(arc_pressure.get("payoff_debt", 0.0) or 0.0)
+    momentum_debt = float(arc_pressure.get("momentum_debt", 0.0) or 0.0)
+    if payoff_debt > 0:
+        delta = min(0.14, payoff_debt * 0.55)
+        adjusted_knobs["payoff_intensity"] = min(0.99, float(adjusted_knobs.get("payoff_intensity", 0.7) or 0.7) + delta)
+        applied["arc_payoff_debt_response"] = round(delta, 4)
+    if momentum_debt > 0:
+        delta = min(0.12, momentum_debt * 0.5)
+        adjusted_knobs["hook_intensity"] = min(0.99, float(adjusted_knobs.get("hook_intensity", 0.7) or 0.7) + delta)
+        adjusted_knobs["novelty_boost"] = min(0.95, float(adjusted_knobs.get("novelty_boost", 0.5) or 0.5) + min(0.08, momentum_debt * 0.35))
+        applied["arc_momentum_debt_response"] = round(delta, 4)
+    if applied:
+        applied["arc_pressure"] = {
+            "payoff_debt": round(payoff_debt, 4),
+            "momentum_debt": round(momentum_debt, 4),
+        }
+    return adjusted_knobs, applied
+
 def ensure_project_dirs(cfg: dict) -> str:
     # Track-local outputs if track directory is provided
     tdir = None
@@ -269,6 +486,22 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     if not outline:
         outline = build_outline(cfg, state, llm, cost, ext)
     ensure_story_state(state.data, cfg=cfg, outline=outline)
+    preflight = assess_preflight_bundle(cfg, state.data, runtime_cfg=runtime_cfg, episode=episode)
+    record_preflight_bundle(out_dir, preflight, episode=episode, safe_mode=bool(cfg.get("safe_mode", False)))
+    state.set("preflight_bundle", preflight)
+    if not preflight.get("preflight_ready"):
+        rejection_audit = _record_episode_rejection(
+            cfg=cfg,
+            out_dir=out_dir,
+            episode=episode,
+            reason="preflight_gate_failed",
+            thresholds=cfg.get("quality", {}),
+            failed_checks=list(preflight.get("blocking_reasons", []) or []),
+        )
+        rejection_audit["preflight"] = preflight
+        raise EpisodeRejectedError("preflight_gate_failed", rejection_audit)
+    cfg = apply_preflight_runtime_policy(cfg, preflight)
+    pj = cfg["project"]
 
     sub_key = pj.get("sub_engine", "AUTO")
 
@@ -300,6 +533,9 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     knobs = apply_tension_wave(knobs, state.data.get("tension_wave", {}))
     knobs = damp_knobs(cfg, knobs, original_knobs)
     knobs = clamp_knobs(cfg, knobs)
+    cfg, knobs, runtime_repair_directives = _apply_final_threshold_runtime_repairs(cfg, state.data, knobs)
+    knobs, reader_quality_debt_directives = _apply_reader_quality_debt(cfg, state.data, knobs)
+    knobs, arc_pressure_directives = _apply_arc_pressure(state.data, knobs)
     prof = select_profile(profiles, pj["platform"], pj["genre_bucket"])
     knobs["profile"] = prof
 
@@ -312,6 +548,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     prepare_antagonist_plan(state.data, episode=episode)
     update_pattern_memory(state.data, episode=episode)
     update_market_serialization(state.data, episode=episode, cfg=cfg)
+    knobs, market_feedback_directives = _apply_market_feedback_pressure(state.data, knobs)
     update_portfolio_memory(state.data, cfg=cfg)
     event_plan = generate_event_plan(state.data, episode=episode)
     prepare_antagonist_plan(state.data, episode=episode, event_plan=event_plan)
@@ -336,6 +573,13 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "market": market_prompt_payload(state.data),
         "portfolio": portfolio_prompt_payload(state.data),
     }
+    story_state = _inject_runtime_repair_story_context(story_state, runtime_repair_directives)
+    if reader_quality_debt_directives:
+        story_state["reader_quality_debt"] = reader_quality_debt_directives
+    if arc_pressure_directives:
+        story_state["arc_pressure"] = arc_pressure_directives
+    if market_feedback_directives:
+        story_state["market_feedback_pressure"] = market_feedback_directives
 
     snap = ext.latest(pj["platform"], pj["genre_bucket"]) or {}
     plan_prompt = PROMPTS.episode_plan(
@@ -643,11 +887,25 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
             )
             raise EpisodeRejectedError("quality_gate_failed", rejection_audit)
 
+    final_quality_gate = {
+        "passed": bool(gate_report.get("passed")),
+        "failed_checks": gate_report.get("failed_checks", []),
+        "checks": gate_report.get("checks", {}),
+        "prose_report": gate_report.get("prose_report", {}),
+        "objective_profile": gate_report.get("objective_profile", {}),
+        "predicted_retention": predicted_retention,
+        "thresholds": thresholds,
+        "content_ceiling_total": content_ceiling.get("ceiling_total"),
+        "causal_score": causal_report.get("score"),
+    }
+
     hist = state.get("score_history", [])
     hist.append(score_obj)
     state.set("score_history", hist)
 
     state.data = projected_state
+    state.set("predicted_retention", predicted_retention)
+    state.set("last_quality_gate", final_quality_gate)
     episode_attribution = record_episode_attribution(
         state.data,
         episode=episode,
@@ -679,6 +937,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         objective_scores=objective_scores,
         portfolio_signals=state.data.get("story_state_v2", {}).get("portfolio_memory", {}),
     )
+    state.set("system_status", system_status)
     write_system_status_snapshot(
         system_status,
         runtime_cfg=runtime_cfg,
@@ -687,6 +946,21 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         project_dir_for_backup=out_dir,
     )
     simulation = simulate_long_run(objective_scores, state.data.get("story_state_v2", {}))
+    soak_report = summarize_soak_report(simulation)
+    human_quality_lift = estimate_human_quality_lift(
+        objective_scores=objective_scores,
+        system_status=system_status,
+        repair_plan=repair_plan,
+        gate_passed=bool(gate_report.get("passed")),
+        story_state=state.data.get("story_state_v2", {}),
+    )
+    soak_history = record_soak_history(
+        state.data,
+        episode=episode,
+        soak_report=soak_report,
+        quality_lift_if_human_intervenes=human_quality_lift,
+    )
+    state.set("quality_lift_if_human_intervenes", human_quality_lift)
 
     meta["content_ceiling"] = content_ceiling
     meta["episode_attribution"] = episode_attribution
@@ -698,7 +972,20 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     meta["causal_repair"] = repair_plan
     meta["system_status"] = system_status
     meta["simulation"] = simulation
+    meta["soak_report"] = soak_report
+    meta["quality_lift_if_human_intervenes"] = human_quality_lift
+    meta["soak_history"] = soak_history
     meta["runtime_config"] = runtime_cfg
+    meta["final_threshold_repairs_applied"] = runtime_repair_directives
+    meta["reader_quality_debt_applied"] = reader_quality_debt_directives
+    meta["arc_pressure_applied"] = arc_pressure_directives
+    meta["market_feedback_pressure_applied"] = market_feedback_directives
+    meta["generation_runtime_policy"] = {
+        "max_revision_passes": int(cfg.get("limits", {}).get("max_revision_passes", 2) or 2),
+        "causal_repair_retry_budget": int(cfg.get("limits", {}).get("causal_repair_retry_budget", 2) or 2),
+        "request_timeout_seconds": int(cfg.get("limits", {}).get("request_timeout_seconds", 0) or 0),
+        "mode": str(cfg.get("model", {}).get("mode", "") or ""),
+    }
 
     full_text = (
         episode_text
@@ -718,6 +1005,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "sub_engine": pick_subengine(pj["genre_bucket"], sub_key).key,
         "knobs": knobs,
         "external": snap,
+        "preflight": preflight,
         "meta": meta,
         "scores": score_obj,
         "style_vector": state.get("style_vector"),
@@ -730,7 +1018,15 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "episode_attribution": episode_attribution,
         "system_status": system_status,
         "simulation": simulation,
+        "soak_report": soak_report,
+        "quality_lift_if_human_intervenes": human_quality_lift,
+        "soak_history": soak_history,
         "runtime_config": runtime_cfg,
+        "final_threshold_repairs_applied": runtime_repair_directives,
+        "reader_quality_debt_applied": reader_quality_debt_directives,
+        "arc_pressure_applied": arc_pressure_directives,
+        "market_feedback_pressure_applied": market_feedback_directives,
+        "generation_runtime_policy": meta["generation_runtime_policy"],
         "cost": cost.snapshot(),
     }
     if cfg["output"].get("save_metrics_jsonl", True):

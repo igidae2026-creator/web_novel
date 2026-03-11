@@ -1,5 +1,8 @@
 # Absolute Ceiling Audit
 
+This is the canonical quality-audit surface.
+It supersedes the older parallel archived audit surface `docs/archive/archive_fun_ceiling_audit.md`.
+
 ## Summary
 
 The repository started as a mixed analytics + generation tool with a strong bias toward content scoring, dashboarding, and platform knobs. It had useful runtime hooks for character pressure, conflict memory, event typing, cliffhanger shaping, tension waves, and retention prediction, but those systems were shallow and only partially state-driven.
@@ -99,6 +102,43 @@ The main ceiling blockers were:
 
 - Market/portfolio layers were strong operationally, but generation-side serialization state was shallow.
 
+## First-Order Fun Bottlenecks
+
+The following limits were originally severe enough to cap reader-facing fun:
+
+### Character state acting like a timer
+
+- growth divorced from consequences
+- weak desire, fear, leverage, and relationship pressure
+- limited conversion from character state into scene compulsion
+
+### Conflict escalation acting like a timer
+
+- shallow unresolved-thread memory
+- weak cost ladders
+- weak consequence compounding
+- little substrate for betrayal, reversal, or opponent pressure
+
+### Missing typed event planning
+
+- too much dependence on outline plus prompt luck
+- weak event prerequisite tracking
+- weak consequence binding
+
+### Surface-level cliffhanger validation
+
+- generic suspense wording could pass
+- next-episode pressure was weakly tied to withheld consequence
+
+### Thin retention model
+
+- unresolved pressure quality, curiosity debt, and payoff inventory were under-modeled
+
+### Simplistic analytics heuristics
+
+- loud text could score above structurally strong text
+- keyword and density proxies could overstate fun
+
 ## Audit Conclusion
 
 The repo was not a toy. It already had enough structure to be upgraded rather than discarded wholesale. The correct move was:
@@ -108,3 +148,9 @@ The repo was not a toy. It already had enough structure to be upgraded rather th
 - upgrade character/conflict/event/cliffhanger/tension/retention around that state
 - add information/emotion, world logic, reward/serialization, and regression guard subsystems
 - upgrade evaluation to protect a balanced system profile instead of a single-axis ceiling
+
+The remaining ceiling blockers are now mostly second-generation:
+
+- richer relationship graph memory
+- opponent-side planning and counter-strategy
+- scene-level realization checks against drafted output

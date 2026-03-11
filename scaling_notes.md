@@ -1,4 +1,7 @@
 # scaling_notes
 
-- Prefer batch mode for cost.
-- Use rate_limit_handler and async_queue if you add concurrency.
+Legacy stub.
+
+Canonical replacement:
+
+- `/home/meta_os/web_novel/docs/runtime_scaling_strategy.md`

@@ -21,11 +21,46 @@ DEFAULT_RUNTIME_CONFIG: Dict[str, Any] = {
     },
     "portfolio": {
         "mode": "balanced",
+        "bundle_budgeting": {
+            "enabled": True,
+            "critical_generation_cap": 0,
+            "caution_generation_cap": 1,
+            "stable_generation_cap": 3,
+        },
     },
     "evaluation": {
         "max_revision_passes": 2,
         "causal_repair_retry_budget": 2,
         "viral_required": True,
+        "preflight_gate": {
+            "enabled": True,
+        },
+        "risk_tiers": {
+            "low": {
+                "max_revision_passes": 1,
+                "causal_repair_retry_budget": 1,
+                "request_timeout_seconds": 90,
+                "mode": "batch",
+            },
+            "medium": {
+                "max_revision_passes": 2,
+                "causal_repair_retry_budget": 2,
+                "request_timeout_seconds": 150,
+                "mode": "batch",
+            },
+            "high": {
+                "max_revision_passes": 3,
+                "causal_repair_retry_budget": 3,
+                "request_timeout_seconds": 210,
+                "mode": "batch",
+            },
+            "critical": {
+                "max_revision_passes": 3,
+                "causal_repair_retry_budget": 3,
+                "request_timeout_seconds": 240,
+                "mode": "priority",
+            },
+        },
     },
 }
 
@@ -91,6 +126,26 @@ def configured_loop_steps(runtime_cfg: Dict[str, Any] | None, default_steps: int
         return max(1, int(cadence.get("steps_per_run", default_steps) or default_steps))
     except Exception:
         return max(1, int(default_steps or 1))
+
+
+def capability_generation_cap(runtime_cfg: Dict[str, Any] | None, severity: str) -> int:
+    runtime_cfg = runtime_cfg or {}
+    portfolio = dict(runtime_cfg.get("portfolio", {}) or {})
+    budgeting = dict(portfolio.get("bundle_budgeting", {}) or {})
+    if not budgeting.get("enabled", True):
+        return 999999
+    def _as_budget(key: str, default: int) -> int:
+        value = budgeting.get(key, default)
+        try:
+            return int(default if value is None else value)
+        except Exception:
+            return int(default)
+    mapping = {
+        "critical": _as_budget("critical_generation_cap", 0),
+        "caution": _as_budget("caution_generation_cap", 1),
+        "stable": _as_budget("stable_generation_cap", 3),
+    }
+    return max(0, mapping.get(severity, mapping["stable"]))
 
 
 def apply_runtime_config(cfg: Dict[str, Any], runtime_cfg: Dict[str, Any] | None) -> Dict[str, Any]:

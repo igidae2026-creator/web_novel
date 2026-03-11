@@ -91,3 +91,21 @@ def test_recovery_returns_resume_only_when_replay_is_consistent():
     )
 
     assert decision["verdict"] == "resume"
+
+
+def test_snapshot_staleness_handles_null_last_sync():
+    stale = snapshot_staleness({"schema_version": 1, "last_sync": None}, {"last_sync": None, "current_index": 0})
+
+    assert stale["stale"] is False
+    assert stale["snapshot_index"] == 0
+
+
+def test_detect_duplicate_events_handles_nested_payload_lists():
+    events = [
+        {"ts": "2026-03-11 10:00:00", "type": "final_threshold_evaluated", "payload": {"failed_criteria": ["a", "b"]}},
+        {"ts": "2026-03-11 10:00:00", "type": "final_threshold_evaluated", "payload": {"failed_criteria": ["a", "b"]}},
+    ]
+
+    duplicates = detect_duplicate_events(events)
+
+    assert len(duplicates) == 1

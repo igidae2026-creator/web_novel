@@ -1,5 +1,8 @@
 # Absolute Ceiling Master Plan
 
+This is the canonical quality-architecture plan.
+It supersedes the older parallel archived planning surface `docs/archive/archive_fun_engine_master_plan.md`.
+
 ## Canonical Architecture
 
 The canonical runtime architecture is now:
@@ -15,6 +18,20 @@ The canonical runtime architecture is now:
 9. Structural evaluation + multi-objective scoring
 10. World mutation, reward/serialization mutation, tension update
 11. Regression guard check and metrics persistence
+
+This canonical stack absorbs the earlier fun-engine transition:
+
+- outline
+- character desire state
+- conflict escalation state
+- tension wave target
+- typed event slate
+- episode plan
+- draft
+- structural cliffhanger pass
+- rewrite
+- retention pressure update
+- deterministic ceiling analysis
 
 ## Canonical State Schema
 
@@ -41,6 +58,55 @@ Compatibility projections remain available:
 - `tension_wave`
 - `retention_engine`
 - `story_events`
+
+## Core Story-State Model
+
+The state model must remain explicit enough to answer, before drafting:
+
+- what the protagonist wants now
+- what they fear losing now
+- what weakness can sabotage them now
+- what conflict worsens if they fail now
+- what event type should fire now
+- what cliffhanger mode should close now
+- what unresolved pressure should force the next click
+
+Required domain emphasis:
+
+### Character State
+
+- desire
+- fear
+- weakness
+- misbelief
+- urgency
+- relationship pressure
+- progress
+- backlash
+
+### Conflict State
+
+- unresolved threads
+- threat actor pressure
+- consequence ladder
+- recent event types
+- payoff debt
+
+### Tension State
+
+- target band
+- current band
+- recent peaks
+- release debt
+- spike debt
+
+### Retention State
+
+- unresolved thread pressure
+- curiosity debt
+- threat proximity
+- promised payoff pressure
+- betrayal or reveal carryover
 
 ## Keep / Wrap / Refactor / Replace
 
@@ -88,6 +154,46 @@ Compatibility projections remain available:
 
 This order was mostly preserved. The main adaptation was implementing world/reward/serialization in the same pass as evaluation because the repo already had a stable pipeline shell and the critical blocker was shared state.
 
+Earlier first-pass fun-engine ordering is now absorbed here:
+
+1. Character desire engine
+2. Conflict escalation engine
+3. Typed event generator
+4. Cliffhanger generator
+5. Tension wave controller
+6. Retention upgrade
+
+The current master plan treats those six as minimum generation machinery rather than a separate architecture track.
+
+## Generation Rules
+
+These remain binding architecture rules:
+
+### Rule 1
+
+Every episode must be generated from state, not only from static outline plus platform knobs.
+
+### Rule 2
+
+Every major event must create either:
+
+- a new unresolved thread
+- a raised consequence
+- a partial payoff with new cost
+
+### Rule 3
+
+Cliffhangers must point at a concrete withheld consequence, not generic suspense wording.
+
+### Rule 4
+
+Tension must wave.
+Sustained max intensity without release burns headroom and damages long-run fun.
+
+### Rule 5
+
+Retention must optimize unresolved pressure quality rather than only score averages.
+
 ## Regression Gates
 
 Protected axes:
@@ -122,6 +228,8 @@ The system does not locally maximize cliff intensity, reward density, or novelty
 - explicit antagonist planner separate from protagonist pressure model
 - memory-guided adaptation loop beyond fixed-state heuristics
 - portfolio-level cross-track learning
+- richer relationship graph memory
+- stronger opponent-side planning and counter-strategy representation
 
 ## Recent Architecture Extensions
 
@@ -136,6 +244,19 @@ The system does not locally maximize cliff intensity, reward density, or novelty
 - episode-level attribution now records retention, pacing, fatigue, and payoff signals per episode for downstream repair and release decisions
 - release planning now reserves multiple future windows so strong tracks can claim high-value slots without monopolizing long-horizon opportunity
 - promise state now carries character-specific ownership and dependency edges, causal attribution now identifies high-impact scene units, and long-horizon allocation now accounts for platform seasonality across six windows
+
+## Implemented Baseline
+
+The following first-order structural layers are already implemented and should not be treated as optional side work:
+
+- character desire engine
+- conflict escalation engine
+- typed event generator
+- cliffhanger generator
+- tension wave controller
+- retention pressure engine
+
+That means the next ceiling gains come from deeper semantics and stronger closure, not from re-arguing whether these layers should exist.
 # Streamlit Runtime Control
 
 The Streamlit entrypoint now acts as a lightweight control panel for the automated generation loop.

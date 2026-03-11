@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 from engine.event_log import log_event
+from engine.metaos_contracts import JOB_TYPES
 from engine.safe_io import safe_write_text
 from engine.webnovel_adapter import track_job_payload
 
@@ -13,6 +14,7 @@ JOB_QUEUE_PATH = os.path.join("domains", "webnovel", "runtime", "job_queue.json"
 
 VALID_QUEUE_STATUS = {"idle", "running", "paused", "blocked", "done"}
 VALID_JOB_STATUS = {"queued", "running", "completed", "failed", "rejected", "cancelled"}
+VALID_JOB_TYPES = set(JOB_TYPES)
 
 
 def _ensure_dir(path: str) -> None:
@@ -72,6 +74,8 @@ def validate_job_queue_state(state: Dict[str, Any]) -> tuple[bool, str]:
         if job_id in seen_ids:
             return False, "duplicate_job_id"
         seen_ids.add(job_id)
+        if job.get("job_type") not in VALID_JOB_TYPES:
+            return False, "invalid_job_type"
         if job.get("status") not in VALID_JOB_STATUS:
             return False, "invalid_job_status"
     return True, "ok"
@@ -91,6 +95,8 @@ def repair_job_queue_state(state: Dict[str, Any]) -> Dict[str, Any]:
         job_type = str(raw.get("job_type") or "unknown")
         if not job_id:
             continue
+        if job_type not in VALID_JOB_TYPES:
+            job_type = "repair_final_threshold" if job_id.startswith("repair:") else "generate_episode_track"
         job = _job_dict(job_type, job_id, payload=raw.get("payload") or {}, priority=int(raw.get("priority", 100) or 100))
         job["status"] = raw.get("status") if raw.get("status") in VALID_JOB_STATUS else "queued"
         job["attempts"] = max(0, int(raw.get("attempts", 0) or 0))
@@ -114,9 +120,36 @@ def load_job_queue_state(path: str = JOB_QUEUE_PATH) -> Dict[str, Any]:
     return state if ok else repair_job_queue_state(state)
 
 
+def _queued_job_sort_key(job: Dict[str, Any]) -> tuple:
+    job_type = str(job.get("job_type") or "")
+    repair_context = dict(job.get("payload", {}).get("repair_context") or {})
+    repair_rank = 0 if job_type == "repair_final_threshold" else 1
+    business_rank = 0 if repair_context.get("business_feedback_rebind_required") else 1
+    reader_quality_rank = 0 if (
+        repair_context.get("hook_bias")
+        or repair_context.get("payoff_bias")
+        or repair_context.get("rewrite_pressure")
+    ) else 1
+    return (
+        business_rank,
+        reader_quality_rank,
+        int(job.get("priority", 100) or 100),
+        repair_rank,
+        str(job.get("job_id") or ""),
+    )
+
+
+def _normalize_job_order(jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    queued = [job for job in jobs if job.get("status") == "queued"]
+    nonqueued = [job for job in jobs if job.get("status") != "queued"]
+    queued = sorted(queued, key=_queued_job_sort_key)
+    return nonqueued + queued
+
+
 def save_job_queue_state(state: Dict[str, Any], path: str = JOB_QUEUE_PATH, safe_mode: bool = True) -> Dict[str, Any]:
     _ensure_dir(path)
     normalized = repair_job_queue_state(state)
+    normalized["jobs"] = _normalize_job_order(list(normalized.get("jobs", []) or []))
     normalized["counters"] = _compute_counters(normalized["jobs"])
     safe_write_text(
         path,

@@ -11,6 +11,35 @@
   "evaluation": {
     "max_revision_passes": 2,
     "causal_repair_retry_budget": 2,
-    "viral_required": true
+    "viral_required": true,
+    "preflight_gate": {
+      "enabled": true
+    },
+    "risk_tiers": {
+      "low": {
+        "max_revision_passes": 1,
+        "causal_repair_retry_budget": 1,
+        "request_timeout_seconds": 90,
+        "mode": "batch"
+      },
+      "medium": {
+        "max_revision_passes": 2,
+        "causal_repair_retry_budget": 2,
+        "request_timeout_seconds": 150,
+        "mode": "batch"
+      },
+      "high": {
+        "max_revision_passes": 3,
+        "causal_repair_retry_budget": 3,
+        "request_timeout_seconds": 210,
+        "mode": "batch"
+      },
+      "critical": {
+        "max_revision_passes": 3,
+        "causal_repair_retry_budget": 3,
+        "request_timeout_seconds": 240,
+        "mode": "priority"
+      }
+    }
   }
 }

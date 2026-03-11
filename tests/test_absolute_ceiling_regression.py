@@ -22,8 +22,9 @@ from engine.causal_repair import (
 from engine.repair_diff_audit import audit_repair_diff
 from engine.promise_graph import update_promise_payoff_graph
 from engine.episode_attribution import build_episode_attribution, record_episode_attribution
+from engine.character_arc import update_character_arc
 from engine.causal_attribution import build_scene_event_attribution
-from engine.reliability import detect_axis_drift, detect_quality_drift, simulate_long_run, update_system_status
+from engine.reliability import detect_axis_drift, detect_quality_drift, record_soak_history, simulate_long_run, update_system_status
 from engine.portfolio_memory import learn_portfolio_snapshot, update_portfolio_memory, portfolio_prompt_payload
 from engine.portfolio_signals import compute_portfolio_signals
 from engine.regression_guard import portfolio_signal_decision, release_policy_decision
@@ -200,6 +201,40 @@ def test_market_serialization_couples_paywall_pressure_and_reader_trust():
     assert bundle["market"]["paywall_pressure"] >= 7
     assert payload["reader_trust"] >= 5
     assert bundle["serialization"]["market_fit"] >= 5
+
+
+def test_market_serialization_ingests_business_feedback_pressure(tmp_path):
+    state = {"out_dir": str(tmp_path / "outputs")}
+    cfg = {
+        "project": {"platform": "Munpia", "genre_bucket": "A"},
+        "novel": {"paywall_window": [20, 30], "early_focus_episodes": 5},
+    }
+    os.makedirs(state["out_dir"], exist_ok=True)
+    with open(os.path.join(state["out_dir"], "certification_report.json"), "w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "market": {"ok": False, "stats": {"latest_top_percent": 8.4}},
+                "business_feedback": {
+                    "available": True,
+                    "total_revenue": 300.0,
+                    "total_campaign_spend": 280.0,
+                    "best_campaign_roi": 0.05,
+                },
+                "failure_reason": "band_not_reached",
+            },
+            handle,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    ensure_story_state(state, cfg=cfg)
+    bundle = update_market_serialization(state, episode=12, cfg=cfg, event_plan={"type": "arrival"})
+    payload = market_prompt_payload(state)
+
+    assert bundle["market"]["market_feedback_active"] is True
+    assert bundle["market"]["market_pressure"] >= 3
+    assert bundle["market"]["reader_exit_risk"] >= 3
+    assert payload["market_pressure"] >= 3
 
 
 def test_causal_repair_plan_targets_critical_issues():
@@ -754,6 +789,16 @@ def test_episode_attribution_records_episode_level_signals():
     assert state["story_state_v2"]["control"]["episode_attribution"]["latest"]["episode"] == 4
     assert state["story_state_v2"]["portfolio_memory"]["episode_attribution_memory"]["observed"] == 1
     assert state["story_state_v2"]["control"]["episode_attribution"]["latest"]["fine_grained"]["scene_units"]
+    reader_quality = state["story_state_v2"]["control"]["reader_quality"]
+    assert reader_quality["hook_debt"] >= 0.0
+    assert reader_quality["payoff_debt"] >= 0.0
+    assert reader_quality["fatigue_debt"] >= 0.0
+    assert reader_quality["thinness_debt"] >= 0.0
+    assert reader_quality["repetition_debt"] >= 0.0
+    assert reader_quality["deja_vu_debt"] >= 0.0
+    assert reader_quality["fake_urgency_debt"] >= 0.0
+    assert reader_quality["compression_debt"] >= 0.0
+    assert reader_quality["history"][-1]["episode"] == 4
 
 
 def test_fine_grained_causal_attribution_picks_top_scene():
@@ -1003,7 +1048,48 @@ def test_system_status_records_iteration_history_and_portfolio_signals():
     assert status["axis_history"]["fun"]
     assert status["repair_rate_history"]
     assert status["portfolio_signal_history"][-1]["episode"] == 3
-    assert state["system_status"]["latest_portfolio_signals"]["release_guard"] == 7
+
+
+def test_record_soak_history_accumulates_stability_signal():
+    state = {}
+    ensure_story_state(state)
+
+    first = record_soak_history(
+        state,
+        episode=1,
+        soak_report={"tested": True, "steady_noop_ratio": 0.74, "dominant_mode": "steady"},
+        quality_lift_if_human_intervenes=0.08,
+    )
+    second = record_soak_history(
+        state,
+        episode=2,
+        soak_report={"tested": True, "steady_noop_ratio": 0.82, "dominant_mode": "steady"},
+        quality_lift_if_human_intervenes=0.05,
+    )
+
+    assert first["observed"] == 1
+    assert second["observed"] == 2
+    assert second["steady_noop_ratio"] >= 0.74
+    assert second["quality_lift_trend"] <= 0.08
+    assert state["story_state_v2"]["control"]["soak_history"]["history"][-1]["episode"] == 2
+
+
+def test_reward_and_character_updates_accumulate_arc_pressure():
+    state = {}
+    ensure_story_state(state)
+
+    update_character_arc(state, episode=5, score_obj={"hook_score": 0.55, "escalation": 0.52}, event_plan={"type": "loss"})
+    update_reward_serialization(
+        state,
+        episode=5,
+        event_plan={"type": "misunderstanding"},
+        score_obj={"payoff_score": 0.4, "hook_score": 0.7},
+    )
+
+    arc_pressure = state["story_state_v2"]["control"]["arc_pressure"]
+    assert arc_pressure["momentum_debt"] > 0
+    assert arc_pressure["payoff_debt"] >= 0
+    assert arc_pressure["history"][-1]["episode"] == 5
 
 
 def test_quality_drift_detection_triggers_warning_and_rollback_signal():

@@ -68,3 +68,73 @@ def test_supervisor_and_policy_snapshots_round_trip(tmp_path):
     assert load_admission_state(str(admission_path))["last_scope_decision"]["decision"] == "accepted"
     assert promotion["promoted_artifacts"][-1]["artifact_id"] == "artifact:bar"
     assert load_promotion_state(str(promotion_path))["last_promotion_decision"]["decision"] == "promoted"
+
+
+def test_job_queue_prioritizes_business_feedback_repairs_ahead_of_generation(tmp_path):
+    queue_path = tmp_path / "job_queue.json"
+    save_job_queue_state(
+        {
+            "queue_status": "paused",
+            "jobs": [
+                {
+                    "job_id": "track:0",
+                    "job_type": "generate_episode_track",
+                    "status": "queued",
+                    "priority": 0,
+                    "payload": {"track_id": "track_a"},
+                },
+                {
+                    "job_id": "repair:track_a:market_feedback_autoloop",
+                    "job_type": "repair_final_threshold",
+                    "status": "queued",
+                    "priority": 15,
+                    "payload": {
+                        "track_id": "track_a",
+                        "repair_context": {"business_feedback_rebind_required": True},
+                    },
+                },
+            ],
+        },
+        path=str(queue_path),
+        safe_mode=False,
+    )
+
+    state = load_job_queue_state(str(queue_path))
+
+    assert state["jobs"][0]["job_id"] == "repair:track_a:market_feedback_autoloop"
+    assert state["jobs"][1]["job_id"] == "track:0"
+
+
+def test_job_queue_prioritizes_reader_quality_repairs_ahead_of_generation(tmp_path):
+    queue_path = tmp_path / "job_queue.json"
+    save_job_queue_state(
+        {
+            "queue_status": "paused",
+            "jobs": [
+                {
+                    "job_id": "track:0",
+                    "job_type": "generate_episode_track",
+                    "status": "queued",
+                    "priority": 0,
+                    "payload": {"track_id": "track_a"},
+                },
+                {
+                    "job_id": "repair:track_a:early_hook_strength",
+                    "job_type": "repair_final_threshold",
+                    "status": "queued",
+                    "priority": 40,
+                    "payload": {
+                        "track_id": "track_a",
+                        "repair_context": {"hook_bias": 0.14, "rewrite_pressure": "high"},
+                    },
+                },
+            ],
+        },
+        path=str(queue_path),
+        safe_mode=False,
+    )
+
+    state = load_job_queue_state(str(queue_path))
+
+    assert state["jobs"][0]["job_id"] == "repair:track_a:early_hook_strength"
+    assert state["jobs"][1]["job_id"] == "track:0"

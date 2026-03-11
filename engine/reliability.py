@@ -169,3 +169,108 @@ def simulate_long_run(
             "drift": drift,
         }
     return {"baseline_balanced_total": round(base_profile["balanced_total"], 4), "runs": simulation_runs}
+
+
+def summarize_soak_report(simulation: Dict[str, Any]) -> Dict[str, Any]:
+    runs = dict((simulation or {}).get("runs", {}) or {})
+    if not runs:
+        return {"tested": False, "steady_noop_ratio": 0.0, "dominant_mode": "unknown"}
+    drift_flags = []
+    repair_rates = []
+    balanced_floors = []
+    for run in runs.values():
+        drift = dict(run.get("drift", {}) or {})
+        drift_flags.append(0.0 if drift.get("drift_detected") else 1.0)
+        repair_rates.append(float(run.get("repair_rate_mean", 0.0) or 0.0))
+        balanced_floors.append(float(run.get("min_balanced_total", 0.0) or 0.0))
+    steady_noop_ratio = _clamp(_mean(drift_flags) * 0.6 + _mean(repair_rates) * 0.25 + _mean(balanced_floors) * 0.15)
+    dominant_mode = "steady" if steady_noop_ratio >= 0.72 else "noop" if steady_noop_ratio >= 0.5 else "volatile"
+    return {
+        "tested": True,
+        "steady_noop_ratio": round(steady_noop_ratio, 4),
+        "dominant_mode": dominant_mode,
+        "run_count": len(runs),
+        "drift_free_run_ratio": round(_mean(drift_flags), 4),
+        "repair_rate_mean": round(_mean(repair_rates), 4),
+        "balanced_floor_mean": round(_mean(balanced_floors), 4),
+    }
+
+
+def record_soak_history(
+    state: Dict[str, Any],
+    *,
+    episode: int,
+    soak_report: Dict[str, Any],
+    quality_lift_if_human_intervenes: float,
+) -> Dict[str, Any]:
+    story_state = ensure_story_state(state)
+    control = story_state.setdefault("control", {})
+    soak_state = control.setdefault(
+        "soak_history",
+        {
+            "observed": 0,
+            "steady_noop_ratio": 0.0,
+            "dominant_mode": "unknown",
+            "quality_lift_trend": 1.0,
+            "history": [],
+        },
+    )
+    snapshot = {
+        "episode": int(episode),
+        "steady_noop_ratio": round(float(soak_report.get("steady_noop_ratio", 0.0) or 0.0), 4),
+        "dominant_mode": str(soak_report.get("dominant_mode") or "unknown"),
+        "quality_lift_if_human_intervenes": round(float(quality_lift_if_human_intervenes or 0.0), 4),
+    }
+    history = (list(soak_state.get("history", []) or []) + [snapshot])[-12:]
+    observed = int(soak_state.get("observed", 0) or 0) + 1
+    blend = 0.0 if observed == 1 else 0.74
+    soak_state["history"] = history
+    soak_state["observed"] = observed
+    soak_state["steady_noop_ratio"] = round(float(soak_state.get("steady_noop_ratio", 0.0) or 0.0) * blend + snapshot["steady_noop_ratio"] * (1.0 - blend), 4)
+    soak_state["dominant_mode"] = snapshot["dominant_mode"] if observed <= 2 else (
+        "steady" if sum(1 for item in history if item.get("dominant_mode") == "steady") >= max(1, len(history) // 2)
+        else "noop" if sum(1 for item in history if item.get("dominant_mode") == "noop") >= max(1, len(history) // 2)
+        else snapshot["dominant_mode"]
+    )
+    soak_state["quality_lift_trend"] = round(
+        float(soak_state.get("quality_lift_trend", 1.0) or 1.0) * blend + snapshot["quality_lift_if_human_intervenes"] * (1.0 - blend),
+        4,
+    )
+    state["story_state_v2"] = story_state
+    sync_story_state(state)
+    return soak_state
+
+
+def estimate_human_quality_lift(
+    *,
+    objective_scores: Dict[str, Any],
+    system_status: Dict[str, Any] | None = None,
+    repair_plan: Dict[str, Any] | None = None,
+    gate_passed: bool = False,
+    story_state: Dict[str, Any] | None = None,
+) -> float:
+    profile = evaluate_total_profile(objective_scores)
+    balanced_total = float(profile.get("balanced_total", 0.0) or 0.0)
+    repair = dict(repair_plan or {})
+    critical_issues = list(repair.get("critical_issues", []) or [])
+    strategy = list(repair.get("recommended_strategies", []) or [])
+    status = dict(system_status or {})
+    drift = dict(status.get("drift", {}) or {})
+    rollback = bool(status.get("rollback_signal"))
+    story_state = dict(story_state or {})
+    soak_history = dict(((story_state.get("control", {}) or {}).get("soak_history", {}) or {}))
+    soak_observed = int(soak_history.get("observed", 0) or 0)
+    soak_ratio = float(soak_history.get("steady_noop_ratio", 0.0) or 0.0)
+    soak_lift_trend = float(soak_history.get("quality_lift_trend", 1.0) or 1.0)
+
+    lift = 0.16
+    lift -= min(0.1, balanced_total * 0.1)
+    lift -= 0.03 if gate_passed else 0.0
+    lift += min(0.08, len(critical_issues) * 0.012)
+    lift += min(0.04, len(strategy) * 0.008)
+    lift += min(0.04, float(drift.get("drop", 0.0) or 0.0))
+    lift += 0.03 if rollback else 0.0
+    if soak_observed:
+        lift -= min(0.05, soak_ratio * 0.06)
+        lift -= min(0.03, max(0.0, 0.2 - soak_lift_trend))
+    return round(_clamp(lift, 0.0, 1.0), 4)

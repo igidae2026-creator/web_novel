@@ -35,11 +35,12 @@ def build_episode_attribution(
     payoff_integrity = float(promise_graph.get("payoff_integrity", 0.5) or 0.5)
     unresolved_promises = min(1.0, float(promise_graph.get("unresolved_count", 0) or 0) / 6.0)
     fine_grained = build_scene_event_attribution(episode_text, event_plan=event_plan, cliffhanger_plan=cliffhanger_plan)
+    scene_signal = float(fine_grained.get("scene_signal", 0.0) or 0.0)
     retention_signal = _clamp(hook_score * 0.32 + unresolved_pressure * 0.22 + payoff_score * 0.16 + payoff_integrity * 0.12 + ceiling_total * 0.10 + reward_density * 0.08)
     event_chain_strength = float(fine_grained.get("event_chain_strength", 0.0) or 0.0)
-    pacing_signal = _clamp(pacing_score * 0.56 + (1.0 - repetition) * 0.18 + expectation_alignment * 0.14 + max(0.0, 1.0 - abs(unresolved_pressure - 0.6)) * 0.12 + float(fine_grained.get("scene_signal", 0.0) or 0.0) * 0.04 + event_chain_strength * 0.03)
+    pacing_signal = _clamp(pacing_score * 0.56 + (1.0 - repetition) * 0.18 + expectation_alignment * 0.14 + max(0.0, 1.0 - abs(unresolved_pressure - 0.6)) * 0.12 + scene_signal * 0.04 + event_chain_strength * 0.03)
     fatigue_signal = _clamp(repetition * 0.48 + payoff_debt * 0.18 + unresolved_promises * 0.12 + max(0.0, reward_density - 0.75) * 0.22)
-    payoff_signal = _clamp(payoff_score * 0.46 + payoff_integrity * 0.34 + expectation_alignment * 0.12 + max(0.0, 1.0 - unresolved_promises) * 0.08 + float(fine_grained.get("scene_signal", 0.0) or 0.0) * 0.03 + event_chain_strength * 0.02)
+    payoff_signal = _clamp(payoff_score * 0.46 + payoff_integrity * 0.34 + expectation_alignment * 0.12 + max(0.0, 1.0 - unresolved_promises) * 0.08 + scene_signal * 0.03 + event_chain_strength * 0.02)
     return {
         "episode": int(episode),
         "retention_signal": round(retention_signal, 4),
@@ -62,6 +63,7 @@ def record_episode_attribution(
     content_ceiling: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     story_state = ensure_story_state(state)
+    content_ceiling = dict(content_ceiling or {})
     attribution = build_episode_attribution(
         episode=episode,
         episode_text=episode_text,
@@ -87,6 +89,62 @@ def record_episode_attribution(
         "fatigue_signal": round(float(memory.get("fatigue_signal", 0.0) or 0.0) * blend + float(attribution["fatigue_signal"]) * (1.0 - blend), 4),
         "payoff_signal": round(float(memory.get("payoff_signal", 0.0) or 0.0) * blend + float(attribution["payoff_signal"]) * (1.0 - blend), 4),
     }
+    reader_quality = control.setdefault(
+        "reader_quality",
+        {
+            "hook_debt": 0.0,
+            "payoff_debt": 0.0,
+            "fatigue_debt": 0.0,
+            "retention_debt": 0.0,
+            "thinness_debt": 0.0,
+            "repetition_debt": 0.0,
+            "deja_vu_debt": 0.0,
+            "fake_urgency_debt": 0.0,
+            "compression_debt": 0.0,
+            "history": [],
+        },
+    )
+    fine_grained = dict(attribution.get("fine_grained", {}) or {})
+    scene_signal = float(fine_grained.get("scene_signal", 0.0) or 0.0)
+    event_chain_strength = float(fine_grained.get("event_chain_strength", 0.0) or 0.0)
+    ceiling_total = float(content_ceiling.get("ceiling_total", 60) or 60) / 100.0
+    hook_score = float(score_obj.get("hook_score", 0.5) or 0.5)
+    repetition = float(score_obj.get("repetition_score", 0.2) or 0.2)
+    unresolved_pressure = float(retention_state.get("unresolved_thread_pressure", 5) or 5) / 10.0
+    pacing_signal = float(attribution.get("pacing_signal", 0.0) or 0.0)
+    payoff_signal = float(attribution.get("payoff_signal", 0.0) or 0.0)
+    thinness_debt = max(0.0, 0.68 - (scene_signal * 0.5 + ceiling_total * 0.3 + hook_score * 0.2))
+    repetition_debt = max(0.0, repetition - 0.16)
+    deja_vu_debt = max(0.0, repetition * 0.55 + max(0.0, 0.58 - event_chain_strength) * 0.45 - 0.18)
+    fake_urgency_debt = max(0.0, unresolved_pressure * 0.6 - (event_chain_strength * 0.22 + payoff_signal * 0.26 + scene_signal * 0.12) - 0.04)
+    compression_debt = max(0.0, 0.68 - pacing_signal) + max(0.0, 0.64 - scene_signal) * 0.35
+    debt_snapshot = {
+        "episode": int(episode),
+        "hook_debt": round(max(0.0, 0.78 - float(score_obj.get("hook_score", 0.0) or 0.0)), 4),
+        "payoff_debt": round(max(0.0, 0.72 - float(attribution["payoff_signal"])), 4),
+        "fatigue_debt": round(max(0.0, float(attribution["fatigue_signal"]) - 0.22), 4),
+        "retention_debt": round(max(0.0, 0.75 - float(attribution["retention_signal"])), 4),
+        "thinness_debt": round(thinness_debt, 4),
+        "repetition_debt": round(repetition_debt, 4),
+        "deja_vu_debt": round(deja_vu_debt, 4),
+        "fake_urgency_debt": round(fake_urgency_debt, 4),
+        "compression_debt": round(compression_debt, 4),
+    }
+    debt_history = (list(reader_quality.get("history", []) or []) + [debt_snapshot])[-8:]
+    reader_quality["history"] = debt_history
+    debt_blend = 0.0 if len(debt_history) == 1 else 0.72
+    for key in (
+        "hook_debt",
+        "payoff_debt",
+        "fatigue_debt",
+        "retention_debt",
+        "thinness_debt",
+        "repetition_debt",
+        "deja_vu_debt",
+        "fake_urgency_debt",
+        "compression_debt",
+    ):
+        reader_quality[key] = round(float(reader_quality.get(key, 0.0) or 0.0) * debt_blend + float(debt_snapshot[key]) * (1.0 - debt_blend), 4)
     state["story_state_v2"] = story_state
     sync_story_state(state)
     return attribution

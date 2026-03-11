@@ -536,6 +536,10 @@ with tabs[4]:
     if os.path.exists(cert_path):
         with st.expander("Latest certification_report.json", expanded=False):
             st.json(json.load(open(cert_path, "r", encoding="utf-8")))
+    final_threshold_path = os.path.join(out_dir, "final_threshold_eval.json")
+    if os.path.exists(final_threshold_path):
+        with st.expander("Latest final_threshold_eval.json", expanded=False):
+            st.json(json.load(open(final_threshold_path, "r", encoding="utf-8")))
 
     st.subheader("Phase Health")
     from engine.phase_health import check as phase_check

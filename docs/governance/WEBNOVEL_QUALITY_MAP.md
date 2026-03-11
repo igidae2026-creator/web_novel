@@ -1,6 +1,11 @@
 # Web Novel Quality Map
 
 This document maps product-quality targets to concrete repository modules and current tests.
+It is a repository implementation map, not the primary semantic contract.
+
+Reader-facing semantic contract:
+
+- `/home/meta_os/web_novel/docs/governance/WEBNOVEL_READER_PERCEPTION_CONTRACT.md`
 
 ## Reader-Perceived Hook
 

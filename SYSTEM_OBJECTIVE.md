@@ -6,6 +6,12 @@ The system objective is:
 
 `stable 24-hour unattended production of high-ranking web-novel quality`
 
+Canonical completion bar:
+- default runtime state should converge toward `final_threshold_ready=true`
+- heavy-reader quality bundles should close through system behavior, not operator rescue
+- human intervention should mostly confirm, not elevate, quality
+- failure signals must become next-cycle generation pressure automatically
+
 Operational interpretation:
 - generic readability is necessary but insufficient
 - domain competitiveness for Korean web novels is mandatory
@@ -20,3 +26,4 @@ Production target:
 - reduce dependence on one-off model luck
 - preserve a patchable governance stack from rules to repo implementation
 - reduce the operational need for human triage, routing, and quality rescue during 24-hour runs
+- turn reader-quality debt, arc debt, market pressure, soak evidence, and repair state into direct closed-loop control over the next generation cycle

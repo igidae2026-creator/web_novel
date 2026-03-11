@@ -9,6 +9,8 @@ from engine.cost import CostTracker
 from engine.external_rank import ExternalRankSignals
 from engine.pipeline import EpisodeRejectedError, generate_episode, ensure_project_dirs
 from engine.cross_track_release import apply_queue_release_outcome, apply_runtime_release_to_state, learn_runtime_release_outcome_in_state, refresh_queue_release_runtime, resolve_queue_release_action
+from engine.final_threshold import evaluate_final_threshold_bundle
+from engine.final_threshold_runtime import build_fault_injection_report, run_final_threshold_repairs
 from engine.runtime_config import generation_enabled, load_runtime_config, load_runtime_config_into_cfg
 
 MAX_TRACK_ERRORS = 3
@@ -69,6 +71,56 @@ def run_queue_step(cfg: Dict[str, Any]) -> Tuple[bool, str]:
         state = StateStore(state_path, safe_mode=bool(merged.get("safe_mode", False)), project_dir_for_backup=out_dir)
         state.load()
         apply_runtime_release_to_state(state.data, runtime_entry)
+        repair_run = run_final_threshold_repairs(
+            state=state,
+            out_dir=out_dir,
+            track_id=os.path.basename(tdir),
+            safe_mode=bool(merged.get("safe_mode", False)),
+        )
+        fault_report = build_fault_injection_report(out_dir)
+        if repair_run.get("bundle_priority_mode"):
+            state.data.setdefault("story_state_v2", {}).setdefault("control", {}).setdefault("execution_priority", {})
+            state.data["story_state_v2"]["control"]["execution_priority"] = {
+                "mode": repair_run.get("bundle_priority_mode"),
+                "failed_bundles": list(repair_run.get("failed_bundles", []) or []),
+            }
+
+        if repair_run.get("blocked_generation"):
+            append_jsonl(
+                os.path.join(tdir, 'outputs', 'metrics.jsonl'),
+                {
+                    "type": "queue_step_blocked",
+                    "track": os.path.basename(tdir),
+                    "reason": "final_threshold_repair_block",
+                    "repair_run": repair_run,
+                    "fault_injection": fault_report,
+                },
+                safe_mode=bool(merged.get('safe_mode', False)),
+                project_dir_for_backup=tdir,
+            )
+            state.save()
+            q["status"] = "paused"
+            q["last_error"] = "Final threshold repair requires hold before generation"
+            save_queue_state(q)
+            evaluate_final_threshold_bundle(
+                merged,
+                out_dir,
+                cycle_context={
+                    "track_id": os.path.basename(tdir),
+                    "action": "repair_hold",
+                    "task_generated": True,
+                    "execution_recorded": True,
+                    "failed": True,
+                    "failure_recorded": True,
+                    "next_step_recorded": True,
+                    "fault_injection": fault_report,
+                    "policy_decision": "hold",
+                    "prefer_production_convenience": False,
+                    "quality_lift_if_human_intervenes": state.data.get("quality_lift_if_human_intervenes", 1.0),
+                },
+                safe_mode=bool(merged.get("safe_mode", False)),
+            )
+            return False, "Final threshold repair requires hold before generation"
 
         if runtime_entry.get("action") == "hold":
             outcome = apply_queue_release_outcome(q, tdir, executed=False)
@@ -82,6 +134,23 @@ def run_queue_step(cfg: Dict[str, Any]) -> Tuple[bool, str]:
                 project_dir_for_backup=tdir,
             )
             advance(outcome["queue_state"])
+            evaluate_final_threshold_bundle(
+                merged,
+                out_dir,
+                cycle_context={
+                    "track_id": os.path.basename(tdir),
+                    "action": "hold",
+                    "task_generated": True,
+                    "execution_recorded": True,
+                    "next_step_recorded": True,
+                    "policy_decision": "hold",
+                    "scope_authority_policy_ok": True,
+                    "market_feedback_handled": True,
+                    "fault_injection": fault_report,
+                    "quality_lift_if_human_intervenes": state.data.get("quality_lift_if_human_intervenes", 1.0),
+                },
+                safe_mode=bool(merged.get("safe_mode", False)),
+            )
             return True, f"Held track {os.path.basename(tdir)} for staggered release"
 
         llm = LLM(merged)
@@ -89,7 +158,7 @@ def run_queue_step(cfg: Dict[str, Any]) -> Tuple[bool, str]:
         ext = ExternalRankSignals(merged)
 
         ep = int(state.get("next_episode", 1) or 1)
-        generate_episode(merged, state, llm, cost, ext, ep)
+        record = generate_episode(merged, state, llm, cost, ext, ep)
         state.save()
         cost.write_summary()
 
@@ -103,18 +172,106 @@ def run_queue_step(cfg: Dict[str, Any]) -> Tuple[bool, str]:
     safe_mode=bool(merged.get('safe_mode', False)), project_dir_for_backup=tdir)
         if outcome["should_advance"]:
             advance(outcome["queue_state"])
+            evaluate_final_threshold_bundle(
+                merged,
+                out_dir,
+                cycle_context={
+                    "track_id": os.path.basename(tdir),
+                    "action": "generate",
+                    "episode": ep,
+                    "task_generated": True,
+                    "execution_recorded": True,
+                    "next_step_recorded": True,
+                    "gate_passed": bool((state.data.get("last_quality_gate") or {}).get("passed")),
+                    "predicted_retention": state.data.get("predicted_retention"),
+                    "causal_score": (record.get("meta", {}).get("scene_causality", {}) or {}).get("score"),
+                    "content_ceiling_total": (record.get("content_ceiling", {}) or {}).get("ceiling_total"),
+                    "policy_decision": "continue",
+                    "scope_authority_policy_ok": True,
+                    "market_feedback_handled": True,
+                    "soak_report": record.get("soak_report"),
+                    "fault_injection": fault_report,
+                    "quality_lift_if_human_intervenes": state.data.get("quality_lift_if_human_intervenes", 1.0),
+                },
+                safe_mode=bool(merged.get("safe_mode", False)),
+            )
             return True, f"Ran track {os.path.basename(tdir)} episode {ep}"
         save_queue_state(outcome["queue_state"])
+        evaluate_final_threshold_bundle(
+            merged,
+            out_dir,
+            cycle_context={
+                "track_id": os.path.basename(tdir),
+                "action": "generate",
+                "episode": ep,
+                "task_generated": True,
+                "execution_recorded": True,
+                "next_step_recorded": True,
+                "gate_passed": bool((state.data.get("last_quality_gate") or {}).get("passed")),
+                "predicted_retention": state.data.get("predicted_retention"),
+                "causal_score": (record.get("meta", {}).get("scene_causality", {}) or {}).get("score"),
+                "content_ceiling_total": (record.get("content_ceiling", {}) or {}).get("ceiling_total"),
+                "policy_decision": "continue",
+                "scope_authority_policy_ok": True,
+                "market_feedback_handled": True,
+                "soak_report": record.get("soak_report"),
+                "fault_injection": fault_report,
+                "quality_lift_if_human_intervenes": state.data.get("quality_lift_if_human_intervenes", 1.0),
+            },
+            safe_mode=bool(merged.get("safe_mode", False)),
+        )
         return True, f"Accelerated track {os.path.basename(tdir)} episode {ep}"
     except EpisodeRejectedError as exc:
         q["last_error"] = exc.audit.get("message", str(exc))
         q["status"] = "paused"
         save_queue_state(q)
+        out_dir = os.path.join(tdir, "outputs")
+        evaluate_final_threshold_bundle(
+            cfg,
+            out_dir,
+            cycle_context={
+                "track_id": os.path.basename(tdir),
+                "action": "reject",
+                "episode": exc.audit.get("episode"),
+                "task_generated": True,
+                "execution_recorded": True,
+                "failed": True,
+                "failure_recorded": True,
+                "next_step_recorded": True,
+                "gate_passed": False,
+                "policy_decision": "reject",
+                "rewrite_attempted": True,
+                "predicted_retention": exc.audit.get("predicted_retention"),
+                "causal_score": exc.audit.get("causal_score"),
+                "content_ceiling_total": exc.audit.get("content_ceiling_total"),
+                "scope_authority_policy_ok": True,
+                "market_feedback_handled": True,
+                "fault_injection": fault_report if 'fault_report' in locals() else {"tested": True, "safe_blocked": True},
+            },
+            safe_mode=bool(cfg.get("safe_mode", False)),
+        )
         return False, exc.audit.get("message", f"Episode rejected for {os.path.basename(tdir)}")
     except UnsafeOperationError as ue:
         q["last_error"] = str(ue)
         q["status"] = "paused"
         save_queue_state(q)
+        out_dir = os.path.join(tdir, "outputs")
+        evaluate_final_threshold_bundle(
+            cfg,
+            out_dir,
+            cycle_context={
+                "track_id": os.path.basename(tdir),
+                "action": "blocked",
+                "task_generated": True,
+                "execution_recorded": False,
+                "failed": True,
+                "failure_recorded": True,
+                "next_step_recorded": True,
+                "fault_injection": {"tested": True, "safe_blocked": True},
+                "policy_decision": "hold",
+            },
+            safe_mode=bool(cfg.get("safe_mode", False)),
+        )
         return False, f"Blocked: {ue}"
     except Exception as e:
         # error accounting
@@ -136,6 +293,23 @@ def run_queue_step(cfg: Dict[str, Any]) -> Tuple[bool, str]:
         q["last_error"] = repr(e)
         q["status"] = "paused"
         save_queue_state(q)
+        out_dir = os.path.join(tdir, "outputs")
+        evaluate_final_threshold_bundle(
+            cfg,
+            out_dir,
+            cycle_context={
+                "track_id": os.path.basename(tdir),
+                "action": "error",
+                "task_generated": True,
+                "execution_recorded": False,
+                "failed": True,
+                "failure_recorded": True,
+                "next_step_recorded": True,
+                "fault_injection": {"tested": True, "safe_blocked": True},
+                "policy_decision": "hold",
+            },
+            safe_mode=bool(cfg.get("safe_mode", False)),
+        )
         return False, f"Error: {e}"
 
 

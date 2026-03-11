@@ -4,7 +4,7 @@ from typing import Dict, Any, Tuple
 
 def validate_queue_state(state: Dict[str, Any]) -> Tuple[bool, str]:
     status = state.get("status")
-    if status not in ["idle","running","paused","done"]:
+    if status not in ["idle","running","paused","blocked","done"]:
         return False, f"invalid status: {status}"
     dirs = state.get("track_dirs", [])
     if not isinstance(dirs, list):

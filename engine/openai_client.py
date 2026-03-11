@@ -6,10 +6,18 @@ class LLM:
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise EnvironmentError("OPENAI_API_KEY is not set.")
-        self.client = OpenAI(api_key=api_key)
+        timeout_seconds = float(
+            (cfg.get("model", {}) or {}).get(
+                "request_timeout_seconds",
+                (cfg.get("limits", {}) or {}).get("request_timeout_seconds", 180),
+            )
+            or 180
+        )
+        self.client = OpenAI(api_key=api_key, timeout=timeout_seconds)
         self.model = cfg["model"]["name"]
         self.max_retries = int(cfg["limits"].get("max_retries", 4))
         self.mode = cfg["model"].get("mode", "batch").lower()
+        self.timeout_seconds = timeout_seconds
 
     def call(self, prompt: str, temperature: float = 0.7):
         last_err = None

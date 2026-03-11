@@ -31,7 +31,16 @@ FAIL conditions:
 - User task goal -> `GOAL.md`
 - System objective -> `SYSTEM_OBJECTIVE.md`
 - Governance anchor -> `METAOS_ANCHOR.md`
+- Whole-system webnovel bundle grouping -> `docs/governance/WEBNOVEL_SYSTEM_BUNDLES.md`
 - Repo alignment bridge -> `docs/governance/WEBNOVEL_ALIGNMENT_STATUS.md`
+
+PASS conditions:
+- product quality, runtime autonomy, portfolio, operations, and business feedback are grouped in one repo-visible planning surface
+- webnovel work is not described only as episode generation while adjacent commercial bundles remain undocumented
+
+FAIL conditions:
+- narrative quality is documented but portfolio, operations, or business feedback loops are left as implicit side concerns
+- repository planning surfaces optimize one bundle while leaving another bundle unmapped
 
 ### 3. Generation / Prompt Assembly Mapping
 

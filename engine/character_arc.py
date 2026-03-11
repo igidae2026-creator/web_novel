@@ -210,6 +210,23 @@ def update_character_arc(
         protagonist.get("decision_pressure", 6) + protagonist.get("backlash", 0) - protagonist.get("progress", 0)
     )
     rival["urgency"] = _clamp(rival.get("urgency", 5) + episode // 20 + rival.get("progress", 0))
+    arc_pressure = story_state.setdefault("control", {}).setdefault("arc_pressure", {"payoff_debt": 0.0, "momentum_debt": 0.0, "history": []})
+    momentum_signal = max(
+        0.0,
+        min(
+            1.0,
+            protagonist.get("progress", 0) * 0.14
+            + protagonist.get("urgency", 0) * 0.05
+            + protagonist.get("decision_pressure", 0) * 0.04
+            - protagonist.get("backlash", 0) * 0.08,
+        ),
+    )
+    momentum_debt = round(max(0.0, 0.58 - momentum_signal), 4)
+    history = list(arc_pressure.get("history", []) or [])
+    history.append({"episode": int(episode), "momentum_debt": momentum_debt, "progress": protagonist.get("progress", 0), "backlash": protagonist.get("backlash", 0)})
+    arc_pressure["history"] = history[-10:]
+    blend = 0.0 if len(history) == 1 else 0.74
+    arc_pressure["momentum_debt"] = round(float(arc_pressure.get("momentum_debt", 0.0) or 0.0) * blend + momentum_debt * (1.0 - blend), 4)
     story_state["history"]["outcomes"].append(outcome)
     story_state["history"]["outcomes"] = story_state["history"]["outcomes"][-12:]
     state["story_state_v2"] = story_state

@@ -22,6 +22,8 @@ EVENT_TYPES = {
     "supervisor_snapshot_updated",
     "admission_decision_recorded",
     "promotion_decision_recorded",
+    "final_threshold_evaluated",
+    "preflight_evaluated",
 }
 
 SNAPSHOT_TYPES = {
@@ -42,6 +44,7 @@ JOB_TYPES = {
     "certify_artifact",
     "recover_failed_track",
     "generate_episode_track",
+    "repair_final_threshold",
 }
 
 JOB_STATUSES = {"queued", "running", "completed", "failed", "rejected", "cancelled"}

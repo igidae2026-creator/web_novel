@@ -9,6 +9,13 @@ ALLOW_OVERWRITE_WITH_BACKUP = {
     "rank_signals.csv",
     "metrics.jsonl",   # append is preferred; overwrite should be avoided
     "cost_summary.json",
+    "final_threshold_eval.json",
+    "queue_state.json",
+    "job_queue.json",
+    "supervisor_state.json",
+    "admission_state.json",
+    "promotion_state.json",
+    "queue_history.json",
 }
 
 def _ts() -> str:

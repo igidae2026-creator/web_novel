@@ -3,15 +3,73 @@ import os, json, time
 from typing import Dict, Any, Tuple
 from engine.safe_guard import require_safe_mode
 from engine.safe_io import safe_write_text
+from engine.final_threshold import ensure_final_threshold_repairs
 from engine.track_queue import load_queue_state, save_queue_state
 from engine.track_runner import run_queue_step
 from engine.portfolio_orchestrator import rebalance_platform
 from engine.cross_track_release import refresh_queue_release_runtime
-from engine.runtime_config import generation_enabled, load_runtime_config
+from engine.final_threshold_runtime import capability_budget_severity
+from engine.job_queue import JOB_QUEUE_PATH, load_job_queue_state
+from engine.runtime_config import capability_generation_cap, generation_enabled, load_runtime_config
 
 LOCK_PATH = os.path.join("domains","webnovel","tracks",".queue_lock")
 LOCK_TTL_SECONDS = 600  # 10 minutes
 HISTORY_PATH = os.path.join("domains","webnovel","tracks","queue_history.json")
+
+
+def _queue_bundle_severity(track_dirs: list[str]) -> str:
+    severities = []
+    for track_dir in track_dirs:
+        path = os.path.join(track_dir, "outputs", "final_threshold_eval.json")
+        if not os.path.exists(path):
+            continue
+        try:
+            payload = json.load(open(path, "r", encoding="utf-8"))
+        except Exception:
+            continue
+        severities.append(capability_budget_severity(list(payload.get("failed_bundles", []) or [])))
+        reader_quality_count = sum(
+            1
+            for criterion in list(payload.get("failed_criteria", []) or [])
+            if criterion
+            in {
+                "early_hook_strength",
+                "episode_end_hook_strength",
+                "long_arc_payoff_stability",
+                "protagonist_fantasy_persistence",
+                "reader_retention_stability",
+                "serialization_fatigue_control",
+            }
+        )
+        if reader_quality_count >= 2:
+            severities.append("caution")
+    if "critical" in severities:
+        return "critical"
+    if "caution" in severities:
+        return "caution"
+    return "stable"
+
+
+def _ensure_queue_repair_work(track_dirs: list[str], queue_path: str = JOB_QUEUE_PATH) -> int:
+    queued = 0
+    for track_dir in track_dirs:
+        path = os.path.join(track_dir, "outputs", "final_threshold_eval.json")
+        if not os.path.exists(path):
+            continue
+        try:
+            report = json.load(open(path, "r", encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(report, dict):
+            continue
+        report = dict(report)
+        report.setdefault("track_id", os.path.basename(track_dir.rstrip(os.sep)) or "unknown_track")
+        report.setdefault("out_dir", os.path.join(track_dir, "outputs"))
+        before = len(load_job_queue_state(queue_path).get("jobs", []))
+        ensure_final_threshold_repairs(report, queue_path=queue_path, safe_mode=True)
+        after = len(load_job_queue_state(queue_path).get("jobs", []))
+        queued += max(0, after - before)
+    return queued
 
 def _lock_acquire() -> bool:
     os.makedirs(os.path.dirname(LOCK_PATH), exist_ok=True)
@@ -61,7 +119,26 @@ def run_queue_loop(cfg: Dict[str, Any], max_steps: int = 1) -> Tuple[bool, str]:
         h = _load_history()
         msg_last = None
         ok_any = False
-        for _ in range(max(1, int(max_steps))):
+        q0 = load_queue_state()
+        severity = _queue_bundle_severity(list(q0.get("track_dirs", []) or []))
+        generation_cap = capability_generation_cap(runtime_cfg, severity)
+        steps_budget = min(max(1, int(max_steps)), max(0, generation_cap))
+        h["bundle_budgeting"] = {"severity": severity, "generation_cap": generation_cap, "requested_steps": int(max_steps)}
+        if steps_budget <= 0:
+            queued_repairs = _ensure_queue_repair_work(list(q0.get("track_dirs", []) or []))
+            h["last_msg"] = f"Generation budget exhausted for bundle severity={severity}"
+            if queued_repairs:
+                h["last_msg"] += f"; queued_repairs={queued_repairs}"
+            if severity == "critical":
+                q0["status"] = "blocked"
+            elif severity == "caution" and q0.get("status") == "running":
+                q0["status"] = "paused"
+            q0["last_error"] = h["last_msg"]
+            save_queue_state(q0)
+            h["last_ts"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            _save_history(h)
+            return False, h["last_msg"]
+        for _ in range(steps_budget):
             runtime_cfg = load_runtime_config()
             if not generation_enabled(runtime_cfg):
                 msg_last = "Generation disabled in runtime_config.json"

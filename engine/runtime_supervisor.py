@@ -27,6 +27,14 @@ def _default_supervisor_state() -> Dict[str, Any]:
         "stop_reason": None,
         "recovery_required": False,
         "last_event_type": None,
+        "final_threshold_ready": False,
+        "final_threshold_path": None,
+        "failed_criteria": [],
+        "failed_bundles": [],
+        "bundle_priority_mode": None,
+        "reader_quality_priority": None,
+        "runtime_repairs": {},
+        "quality_lift_if_human_intervenes": None,
     }
 
 

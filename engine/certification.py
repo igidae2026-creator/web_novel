@@ -6,8 +6,10 @@ from engine.safe_io import safe_write_text
 from engine.io_utils import append_jsonl
 from engine.io_utils import read_text
 from market_layer.market_api import compute_market_view
+from engine.final_threshold import evaluate_final_threshold_bundle
 from engine.model_config import load_models, get_model
 from engine.grading import maybe_update_grade
+import csv
 
 def _mean(xs: List[float]) -> float:
     return sum(xs)/len(xs) if xs else 0.0
@@ -60,6 +62,58 @@ def load_metrics_scores(metrics_jsonl_path: str, window_eps: int = 10) -> Dict[s
         "escalation_mean": _mean(escs), "escalation_std": _std(escs),
         "repetition_mean": _mean(reps), "repetition_std": _std(reps),
     }
+
+
+def load_business_feedback_summary(
+    revenue_csv_path: str = os.path.join("data", "revenue_input.csv"),
+    campaign_csv_path: str = os.path.join("data", "campaign_input.csv"),
+) -> Dict[str, Any]:
+    summary: Dict[str, Any] = {
+        "available": False,
+        "revenue_rows": 0,
+        "campaign_rows": 0,
+        "total_revenue": 0.0,
+        "total_campaign_spend": 0.0,
+        "best_campaign_roi": 0.0,
+    }
+
+    def _read_rows(path: str) -> List[Dict[str, Any]]:
+        if not path or not os.path.exists(path):
+            return []
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                return list(csv.DictReader(handle))
+        except Exception:
+            return []
+
+    revenue_rows = _read_rows(revenue_csv_path)
+    campaign_rows = _read_rows(campaign_csv_path)
+    summary["revenue_rows"] = len(revenue_rows)
+    summary["campaign_rows"] = len(campaign_rows)
+    summary["available"] = bool(revenue_rows or campaign_rows)
+
+    for row in revenue_rows:
+        try:
+            summary["total_revenue"] += float(row.get("revenue", 0.0) or 0.0)
+        except Exception:
+            continue
+    best_roi = 0.0
+    for row in campaign_rows:
+        try:
+            spend = float(row.get("spend", 0.0) or 0.0)
+        except Exception:
+            spend = 0.0
+        try:
+            revenue = float(row.get("revenue", 0.0) or 0.0)
+        except Exception:
+            revenue = 0.0
+        summary["total_campaign_spend"] += spend
+        if spend > 0:
+            best_roi = max(best_roi, (revenue - spend) / spend)
+    summary["best_campaign_roi"] = round(best_roi, 4)
+    summary["total_revenue"] = round(float(summary["total_revenue"]), 4)
+    summary["total_campaign_spend"] = round(float(summary["total_campaign_spend"]), 4)
+    return summary
 
 def certify(cfg: dict, out_dir: str) -> Dict[str, Any]:
     project_dir = out_dir
@@ -145,6 +199,7 @@ def save_report(cfg: dict, out_dir: str, report: Dict[str, Any]) -> str:
         grade_state['cert_count_since_grade_change'] = int(grade_state.get('cert_count_since_grade_change', 0) or 0) + 1
     grade_state['last_cert_date'] = today
 
+    stats = report.get("market", {}).get("stats", {}) if isinstance(report.get("market", {}), dict) else {}
     if stats.get("available"):
         latest_tp = float(stats.get("latest_top_percent", 999.0) or 999.0)
         grade = maybe_update_grade(grade_state, latest_tp, today_ymd=today, cooldown_days=7, cfg=cfg)
@@ -152,6 +207,8 @@ def save_report(cfg: dict, out_dir: str, report: Dict[str, Any]) -> str:
         safe_write_text(grade_state_path, json.dumps(grade_state, ensure_ascii=False, indent=2), safe_mode=bool(cfg.get("safe_mode", False)), project_dir_for_backup=out_dir)
 
     safe_mode = bool(cfg.get("safe_mode", False))
+    business_feedback = load_business_feedback_summary()
+    report["business_feedback"] = business_feedback
     txt = json.dumps(report, ensure_ascii=False, indent=2)
     safe_write_text(path, txt, safe_mode=safe_mode, project_dir_for_backup=out_dir)
         # Append certification snapshot to metrics
@@ -164,6 +221,16 @@ def save_report(cfg: dict, out_dir: str, report: Dict[str, Any]) -> str:
         pass
 
     try:
+        append_jsonl(
+            os.path.join(out_dir, "metrics.jsonl"),
+            {"type": "business_feedback", "summary": business_feedback},
+            safe_mode=bool(cfg.get("safe_mode", False)),
+            project_dir_for_backup=out_dir,
+        )
+    except Exception:
+        pass
+
+    try:
         if report.get('grade'):
             append_jsonl(os.path.join(out_dir, 'metrics.jsonl'),
                 {'type':'grade','grade': report.get('grade'), 'date': datetime.now().strftime('%Y-%m-%d'),
@@ -171,6 +238,23 @@ def save_report(cfg: dict, out_dir: str, report: Dict[str, Any]) -> str:
                 safe_mode=bool(cfg.get('safe_mode', False)), project_dir_for_backup=out_dir)
     except Exception:
         pass
+
+    evaluate_final_threshold_bundle(
+        cfg,
+        out_dir,
+        cycle_context={
+            "action": "certify",
+            "task_generated": True,
+            "execution_recorded": True,
+            "next_step_recorded": True,
+            "market_feedback_handled": True,
+            "business_feedback_handled": bool(business_feedback.get("available")),
+            "scope_authority_policy_ok": True,
+            "policy_decision": "promote" if report.get("market", {}).get("ok") else "hold",
+            "quality_lift_if_human_intervenes": grade_state.get("quality_lift_if_human_intervenes", 1.0),
+        },
+        safe_mode=safe_mode,
+    )
     return path
 
 

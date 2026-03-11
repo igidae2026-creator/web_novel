@@ -22,6 +22,7 @@ def adapter_manifest() -> Dict[str, Any]:
             "promote_material": "artifact promotion into active runtime",
             "generate_episode": "episode generation orchestration",
             "generate_episode_track": "track queue driven episode generation",
+            "repair_final_threshold": "bundle-level final threshold repair orchestration",
         },
     }
 

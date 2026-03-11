@@ -1,4 +1,7 @@
 # BACKUP_POLICY
 
-- Keep 7 daily backups of outputs/ and data/.
-- Keep 4 weekly backups.
+Legacy stub.
+
+Canonical replacement:
+
+- `/home/meta_os/web_novel/docs/policy_ops_guardrails.md`
