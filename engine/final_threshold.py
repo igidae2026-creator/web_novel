@@ -238,6 +238,16 @@ def _repair_entry_for_criterion(name: str, criteria: Dict[str, Dict[str, Any]]) 
     if name == "market_feedback_autoloop" and bool(details.get("business_feedback_present")):
         priority = max(5, priority - 10)
         repair_context["business_feedback_rebind_required"] = True
+    if name == "autonomous_convergence_trend":
+        hidden_reader_risk_trend = _as_float(details.get("hidden_reader_risk_trend"), 0.0)
+        repair_context["stability_mode"] = "conservative"
+        repair_context["hidden_reader_risk_trend"] = hidden_reader_risk_trend
+        if hidden_reader_risk_trend >= 0.35:
+            priority = max(5, priority - 10)
+            repair_context["reader_risk_trend_repair_required"] = True
+        if hidden_reader_risk_trend >= 0.5:
+            priority = max(5, priority - 10)
+            repair_context["reader_risk_trend_block_required"] = True
     if name == "early_hook_strength":
         repair_context["hook_bias"] = 0.14
         repair_context["rewrite_pressure"] = "high"

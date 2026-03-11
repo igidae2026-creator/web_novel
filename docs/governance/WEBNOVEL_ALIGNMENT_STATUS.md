@@ -81,6 +81,7 @@ Until Layer 3 is rewritten through the patch method for this repository, use the
 - runtime dashboard helpers now summarize hidden reader-risk trend across tracks, so portfolio-level fatigue pressure is visible without opening each final-threshold artifact one by one
 - `system_status.json` snapshots now also carry hidden reader-risk summary, so unattended runtime audits can inspect long-run fatigue pressure from a single typed snapshot instead of depending on the UI
 - episode runtime records now also embed hidden reader-risk summary, so per-episode metrics, system snapshots, and dashboards all share the same portfolio-level fatigue view
+- `autonomous_convergence_trend` failures now emit explicit hidden reader-risk trend repair context, so final-threshold artifacts explain not just that unattended convergence failed but whether long-run reader-fatigue pressure is the blocking cause
 
 ## Conservative Completion Estimate
 

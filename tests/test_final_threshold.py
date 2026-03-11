@@ -457,6 +457,9 @@ def test_final_threshold_blocks_convergence_when_hidden_reader_risk_trend_stays_
     assert report["criteria"]["autonomous_convergence_trend"]["passed"] is False
     assert report["criteria"]["autonomous_convergence_trend"]["details"]["hidden_reader_risk_trend"] == 0.46
     assert load_supervisor_state(str(supervisor_path))["reader_risk_trend_priority"] == "high"
+    repair = next(item for item in report["next_required_repairs"] if item["criterion"] == "autonomous_convergence_trend")
+    assert repair["repair_context"]["hidden_reader_risk_trend"] == 0.46
+    assert repair["repair_context"]["reader_risk_trend_repair_required"] is True
 
 
 def test_final_threshold_history_accumulates_ready_ratio(tmp_path):
