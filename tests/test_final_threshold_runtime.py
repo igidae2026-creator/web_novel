@@ -196,6 +196,53 @@ def test_run_final_threshold_repairs_marks_reader_quality_priority(tmp_path):
     assert state.data["quality_lift_if_human_intervenes"] == 0.06
 
 
+def test_run_final_threshold_repairs_applies_hidden_reader_fatigue_directives(tmp_path):
+    track_dir = tmp_path / "domains" / "webnovel" / "tracks" / "track_hidden"
+    out_dir = track_dir / "outputs"
+    out_dir.mkdir(parents=True)
+    state = StateStore(str(track_dir / "state.json"), safe_mode=False, project_dir_for_backup=str(out_dir))
+    state.load()
+
+    queue_path = tmp_path / "job_queue.json"
+    save_job_queue_state(
+        {
+            "queue_status": "paused",
+            "jobs": [
+                {
+                    "job_id": "repair:track_hidden:serialization_fatigue_control",
+                    "job_type": "repair_final_threshold",
+                    "status": "queued",
+                    "priority": 20,
+                    "attempts": 0,
+                    "payload": {
+                        "track_id": "track_hidden",
+                        "criterion": "serialization_fatigue_control",
+                        "repair_action": "repair_serialization_fatigue_control",
+                        "repair_context": {"novelty_bias": 0.12, "compression_bias": 0.1},
+                    },
+                    "result": None,
+                    "error": None,
+                }
+            ],
+        },
+        path=str(queue_path),
+        safe_mode=False,
+    )
+
+    result = run_final_threshold_repairs(
+        state=state,
+        out_dir=str(out_dir),
+        track_id="track_hidden",
+        queue_path=str(queue_path),
+        safe_mode=False,
+    )
+
+    assert result["executed"] is True
+    control = state.data["story_state_v2"]["control"]["final_threshold_repairs"]
+    assert control["novelty_bias"] == 0.12
+    assert control["compression_bias"] == 0.1
+
+
 def test_build_fault_injection_report_marks_recovery_when_replay_is_consistent(tmp_path):
     out_dir = tmp_path / "outputs"
     out_dir.mkdir(parents=True)

@@ -8,6 +8,11 @@ __pycache__/
 outputs/
 global_backups/
 backups/
+domains/webnovel/runtime/
+domains/webnovel/tracks/*/outputs/
+domains/webnovel/tracks/*/state.json
+domains/webnovel/tracks/queue_state.json
+domains/webnovel/tracks/tracks_index.json
 
 # secrets
 .env

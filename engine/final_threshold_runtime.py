@@ -80,13 +80,13 @@ def run_final_threshold_repairs(
         "episode_end_hook_strength": {"hook_bias": 0.1, "payoff_bias": 0.05, "rewrite_pressure": "high", "reader_quality_priority": "critical"},
         "long_arc_payoff_stability": {"payoff_bias": 0.12, "rewrite_pressure": "high", "reader_quality_priority": "high"},
         "protagonist_fantasy_persistence": {"hook_bias": 0.06, "payoff_bias": 0.08, "rewrite_pressure": "high", "reader_quality_priority": "high"},
-        "reader_retention_stability": {"hook_bias": 0.12, "payoff_bias": 0.06, "rewrite_pressure": "high"},
+        "reader_retention_stability": {"hook_bias": 0.12, "payoff_bias": 0.06, "compression_bias": 0.08, "urgency_bias": 0.08, "rewrite_pressure": "high"},
         "story_quality_stability": {"world_lock": True, "causal_repair_priority": "critical"},
         "adaptive_edit_governance": {"force_fail_closed": True},
         "market_feedback_autoloop": {"market_rebind_required": True},
         "automatic_scope_authority_policy_handling": {"scope_rebind_required": True},
         "human_quality_lift_near_zero": {"human_lift_sampling_required": True},
-        "serialization_fatigue_control": {"world_lock": True, "causal_repair_priority": "high", "reader_quality_priority": "high"},
+        "serialization_fatigue_control": {"world_lock": True, "causal_repair_priority": "high", "reader_quality_priority": "high", "novelty_bias": 0.12, "compression_bias": 0.1},
         "soak_steady_noop_dominance": {"stability_mode": "conservative"},
     }
 

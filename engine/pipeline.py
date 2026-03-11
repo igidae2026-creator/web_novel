@@ -224,6 +224,22 @@ def _apply_final_threshold_runtime_repairs(cfg: dict, state_data: dict, knobs: d
         adjusted_knobs["payoff_intensity"] = min(0.99, float(adjusted_knobs.get("payoff_intensity", 0.7) or 0.7) + payoff_bias)
         applied["payoff_bias"] = round(payoff_bias, 4)
 
+    novelty_bias = float(repairs.get("novelty_bias", 0.0) or 0.0)
+    if novelty_bias:
+        adjusted_knobs["novelty_boost"] = min(0.99, float(adjusted_knobs.get("novelty_boost", 0.5) or 0.5) + novelty_bias)
+        applied["novelty_bias"] = round(novelty_bias, 4)
+
+    compression_bias = float(repairs.get("compression_bias", 0.0) or 0.0)
+    if compression_bias:
+        adjusted_knobs["compression"] = min(0.99, float(adjusted_knobs.get("compression", 0.6) or 0.6) + compression_bias)
+        applied["compression_bias"] = round(compression_bias, 4)
+
+    urgency_bias = float(repairs.get("urgency_bias", 0.0) or 0.0)
+    if urgency_bias:
+        adjusted_knobs["hook_intensity"] = min(0.99, float(adjusted_knobs.get("hook_intensity", 0.7) or 0.7) + min(0.06, urgency_bias * 0.5))
+        adjusted_knobs["payoff_intensity"] = min(0.99, float(adjusted_knobs.get("payoff_intensity", 0.7) or 0.7) + urgency_bias)
+        applied["urgency_bias"] = round(urgency_bias, 4)
+
     rewrite_pressure = str(repairs.get("rewrite_pressure", "") or "").strip().lower()
     if rewrite_pressure:
         if rewrite_pressure == "high":

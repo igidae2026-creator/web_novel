@@ -231,6 +231,7 @@ def _criteria_result(passed: bool, evidence: str, details: Dict[str, Any] | None
 def _repair_entry_for_criterion(name: str, criteria: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     spec = CRITERIA_SPECS[name]
     details = dict(criteria.get(name, {}).get("details") or {})
+    reader_quality_debt = dict(details.get("reader_quality_debt") or {})
     priority = int(spec["priority"])
     repair_context: Dict[str, Any] = {}
 
@@ -255,9 +256,19 @@ def _repair_entry_for_criterion(name: str, criteria: Dict[str, Dict[str, Any]]) 
         repair_context["hook_bias"] = max(float(repair_context.get("hook_bias", 0.0) or 0.0), 0.12)
         repair_context["payoff_bias"] = max(float(repair_context.get("payoff_bias", 0.0) or 0.0), 0.06)
         repair_context["rewrite_pressure"] = "high"
+        if _as_float(reader_quality_debt.get("thinness_debt"), 0.0) > 0.05:
+            repair_context["hook_bias"] = max(float(repair_context.get("hook_bias", 0.0) or 0.0), 0.14)
+            repair_context["compression_bias"] = 0.08
+        if _as_float(reader_quality_debt.get("fake_urgency_debt"), 0.0) > 0.05:
+            repair_context["payoff_bias"] = max(float(repair_context.get("payoff_bias", 0.0) or 0.0), 0.08)
+            repair_context["urgency_bias"] = 0.08
     if name == "serialization_fatigue_control":
         repair_context["world_lock"] = True
         repair_context["causal_repair_priority"] = "high"
+        if _as_float(reader_quality_debt.get("repetition_debt"), 0.0) > 0.03 or _as_float(reader_quality_debt.get("deja_vu_debt"), 0.0) > 0.03:
+            repair_context["novelty_bias"] = 0.12
+        if _as_float(reader_quality_debt.get("compression_debt"), 0.0) > 0.04:
+            repair_context["compression_bias"] = max(float(repair_context.get("compression_bias", 0.0) or 0.0), 0.1)
     if name == "automatic_scope_authority_policy_handling":
         repair_context["scope_policy_rebind_required"] = True
     if name == "human_quality_lift_near_zero":

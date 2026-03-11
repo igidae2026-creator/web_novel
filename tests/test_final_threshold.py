@@ -702,7 +702,15 @@ def test_reader_quality_failures_emit_direct_repair_context(tmp_path):
         track_dir / "state.json",
         {
             "story_state_v2": {
-                "control": {},
+                "control": {
+                    "reader_quality": {
+                        "thinness_debt": 0.14,
+                        "repetition_debt": 0.12,
+                        "deja_vu_debt": 0.11,
+                        "fake_urgency_debt": 0.13,
+                        "compression_debt": 0.12,
+                    }
+                },
                 "promise_graph": {"payoff_integrity": 0.45, "payoff_corruption_flags": ["broken_payoff"]},
             },
             "last_quality_gate": {"passed": True, "checks": {"hook_score": False}, "predicted_retention": 0.58},
@@ -771,6 +779,10 @@ def test_reader_quality_failures_emit_direct_repair_context(tmp_path):
     assert repairs["long_arc_payoff_stability"]["repair_context"]["payoff_bias"] == pytest.approx(0.12)
     assert repairs["protagonist_fantasy_persistence"]["repair_context"]["rewrite_pressure"] == "high"
     assert repairs["serialization_fatigue_control"]["repair_context"]["world_lock"] is True
+    assert repairs["serialization_fatigue_control"]["repair_context"]["novelty_bias"] == pytest.approx(0.12)
+    assert repairs["serialization_fatigue_control"]["repair_context"]["compression_bias"] == pytest.approx(0.1)
+    assert repairs["reader_retention_stability"]["repair_context"]["urgency_bias"] == pytest.approx(0.08)
+    assert repairs["reader_retention_stability"]["repair_context"]["compression_bias"] == pytest.approx(0.08)
     supervisor = load_supervisor_state(str(supervisor_path))
     assert supervisor["reader_quality_priority"] == "critical"
     assert supervisor["runtime_repairs"]["hook_bias"] >= 0.12
