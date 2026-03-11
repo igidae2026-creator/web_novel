@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from engine.runtime_config import list_latest_episodes, read_json_file, read_recent_metrics
+from engine.runtime_config import list_latest_episodes, read_json_file, read_recent_metrics, summarize_hidden_reader_risk
 
 
 def render(system_status_path: str, metrics_path: str, tracks_root: str, standalone_out_dir: str, limit: int = 5) -> None:
@@ -19,6 +19,17 @@ def render(system_status_path: str, metrics_path: str, tracks_root: str, standal
             st.json(metrics_rows)
     else:
         st.caption("No metrics.jsonl records yet.")
+
+    hidden_risk_summary = summarize_hidden_reader_risk(tracks_root=tracks_root, limit=limit)
+    st.subheader("Hidden Reader Risk")
+    if hidden_risk_summary["tracks"]:
+        c1, c2 = st.columns(2)
+        c1.metric("Mean hidden-risk trend", f"{float(hidden_risk_summary.get('mean_hidden_reader_risk_trend', 0.0) or 0.0):.2f}")
+        c2.metric("Critical tracks", int(hidden_risk_summary.get("critical_tracks", 0) or 0))
+        with st.expander("Track risk summary", expanded=False):
+            st.json(hidden_risk_summary["tracks"])
+    else:
+        st.caption("No final-threshold risk summaries yet.")
 
     latest_episodes = list_latest_episodes(tracks_root=tracks_root, standalone_out_dir=standalone_out_dir, limit=limit)
     st.subheader("Latest Episodes")

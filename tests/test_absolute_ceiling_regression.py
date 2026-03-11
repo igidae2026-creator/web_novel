@@ -31,7 +31,7 @@ from engine.regression_guard import portfolio_signal_decision, release_policy_de
 from engine.portfolio_orchestrator import build_portfolio_runtime_snapshot, rebalance_platform
 from engine.cross_track_release import build_cross_track_release_plan
 from engine.cross_track_release import apply_queue_release_outcome, apply_runtime_release_to_state, build_runtime_release_learning_snapshot, learn_runtime_release_outcome_in_state, refresh_queue_release_runtime, resolve_queue_release_action
-from engine.runtime_config import list_latest_episodes, load_runtime_config, load_runtime_config_into_cfg, read_recent_metrics, save_runtime_config, write_system_status_snapshot
+from engine.runtime_config import list_latest_episodes, load_runtime_config, load_runtime_config_into_cfg, read_recent_metrics, save_runtime_config, summarize_hidden_reader_risk, write_system_status_snapshot
 import json
 import os
 import tempfile
@@ -1331,10 +1331,30 @@ def test_runtime_dashboard_helpers_read_metrics_and_latest_episodes():
         with open(os.path.join(output_dir, "metrics.jsonl"), "w", encoding="utf-8") as f:
             f.write(json.dumps({"episode": 1, "system_status": {"iteration_state": "running"}}) + "\n")
             f.write(json.dumps({"episode": 2, "system_status": {"iteration_state": "running"}}) + "\n")
+        with open(os.path.join(output_dir, "final_threshold_eval.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "final_threshold_ready": False,
+                    "failed_bundles": ["operations_capability"],
+                    "criteria": {
+                        "autonomous_convergence_trend": {
+                            "details": {
+                                "hidden_reader_risk_trend": 0.41,
+                            }
+                        }
+                    },
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
 
         latest = list_latest_episodes(tracks_root=tracks_root, limit=3)
         metrics = read_recent_metrics(os.path.join(output_dir, "metrics.jsonl"), limit=1)
+        hidden_risk_summary = summarize_hidden_reader_risk(tracks_root=tracks_root, limit=3)
 
         assert latest
         assert latest[0]["name"] == "episode_001.txt"
         assert metrics[0]["episode"] == 2
+        assert hidden_risk_summary["critical_tracks"] == 1
+        assert hidden_risk_summary["tracks"][0]["hidden_reader_risk_trend"] == 0.41
