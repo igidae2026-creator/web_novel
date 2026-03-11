@@ -129,6 +129,15 @@ def _hidden_reader_risk_from_state(state: Dict[str, Any]) -> float:
     total += float(threshold_history.get("hidden_reader_risk_trend", 0.0) or 0.0)
     return round(total, 4)
 
+
+def _heavy_reader_signal_from_state(state: Dict[str, Any]) -> float:
+    story_state = dict(state.get("story_state_v2", {}) or {})
+    threshold_history = dict((story_state.get("control", {}) or {}).get("final_threshold_history", {}) or {})
+    try:
+        return round(float(threshold_history.get("heavy_reader_signal_trend", 1.0) or 1.0), 4)
+    except Exception:
+        return 1.0
+
 def certify(cfg: dict, out_dir: str) -> Dict[str, Any]:
     project_dir = out_dir
     platform = cfg["project"]["platform"]
@@ -230,10 +239,18 @@ def save_report(cfg: dict, out_dir: str, report: Dict[str, Any]) -> str:
         except Exception:
             state = {}
     hidden_reader_risk = _hidden_reader_risk_from_state(state)
+    heavy_reader_signal_trend = _heavy_reader_signal_from_state(state)
     promotion_guidance = {
-        "verdict": "promote" if report.get("market", {}).get("ok") and hidden_reader_risk < 0.35 else "hold",
-        "reason": "market_ok_and_reader_risk_bounded" if report.get("market", {}).get("ok") and hidden_reader_risk < 0.35 else "hidden_reader_risk_requires_hold",
+        "verdict": "promote" if report.get("market", {}).get("ok") and hidden_reader_risk < 0.35 and heavy_reader_signal_trend >= 0.62 else "hold",
+        "reason": (
+            "market_ok_and_reader_quality_bounded"
+            if report.get("market", {}).get("ok") and hidden_reader_risk < 0.35 and heavy_reader_signal_trend >= 0.62
+            else "heavy_reader_signal_requires_hold"
+            if heavy_reader_signal_trend < 0.62
+            else "hidden_reader_risk_requires_hold"
+        ),
         "hidden_reader_risk": hidden_reader_risk,
+        "heavy_reader_signal_trend": heavy_reader_signal_trend,
     }
     report["business_feedback"] = business_feedback
     report["promotion_guidance"] = promotion_guidance

@@ -40,6 +40,7 @@ def test_generate_tracks_bootstraps_subengine_from_hidden_reader_risk_profile(tm
                 "autonomous_convergence_trend": {
                     "details": {
                         "hidden_reader_risk_trend": 0.21,
+                        "heavy_reader_signal_trend": 0.57,
                     }
                 },
             }
@@ -54,3 +55,5 @@ def test_generate_tracks_bootstraps_subengine_from_hidden_reader_risk_profile(tm
     assert track_json["project"]["sub_engine"] == created[0]["sub_engine"]
     assert track_json["project"]["bootstrap_design_guardrails"]
     assert track_json["bootstrap_strategy"]["hidden_reader_risk"] >= 0.7
+    assert track_json["project"]["bootstrap_heavy_reader_signal_trend"] == 0.57
+    assert created[0]["heavy_reader_signal_trend"] == 0.57

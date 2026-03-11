@@ -35,6 +35,7 @@ def material_from_source(source: Dict[str, Any]) -> Dict[str, Any]:
     metadata = {"project": project, "track": dict(source.get("track") or {})}
     hidden_reader_risk = 0.0
     hidden_reader_risk_trend = 0.0
+    heavy_reader_signal_trend = 1.0
     try:
         hidden_reader_risk = float(source.get("hidden_reader_risk", (source.get("metadata") or {}).get("hidden_reader_risk", 0.0)) or 0.0)
     except Exception:
@@ -43,8 +44,13 @@ def material_from_source(source: Dict[str, Any]) -> Dict[str, Any]:
         hidden_reader_risk_trend = float(source.get("hidden_reader_risk_trend", (source.get("metadata") or {}).get("hidden_reader_risk_trend", 0.0)) or 0.0)
     except Exception:
         hidden_reader_risk_trend = 0.0
+    try:
+        heavy_reader_signal_trend = float(source.get("heavy_reader_signal_trend", (source.get("metadata") or {}).get("heavy_reader_signal_trend", 1.0)) or 1.0)
+    except Exception:
+        heavy_reader_signal_trend = 1.0
     metadata["hidden_reader_risk"] = round(hidden_reader_risk, 4)
     metadata["hidden_reader_risk_trend"] = round(hidden_reader_risk_trend, 4)
+    metadata["heavy_reader_signal_trend"] = round(heavy_reader_signal_trend, 4)
     return {
         "material_id": str(source.get("material_id") or f"track:{track_id}"),
         "source": str(source.get("source") or "webnovel_track"),
@@ -54,7 +60,13 @@ def material_from_source(source: Dict[str, Any]) -> Dict[str, Any]:
         "track_id": track_id,
         "quality_score": float(source.get("quality_score", 0.0) or 0.0),
         "scope_fit_score": float(source.get("scope_fit_score", 0.0) or 0.0),
-        "risk_score": min(1.0, float(source.get("risk_score", 0.0) or 0.0) + min(0.35, hidden_reader_risk * 0.25) + min(0.2, hidden_reader_risk_trend * 0.2)),
+        "risk_score": min(
+            1.0,
+            float(source.get("risk_score", 0.0) or 0.0)
+            + min(0.35, hidden_reader_risk * 0.25)
+            + min(0.2, hidden_reader_risk_trend * 0.2)
+            + min(0.2, max(0.0, 0.72 - heavy_reader_signal_trend) * 0.25),
+        ),
         "novelty_score": float(source.get("novelty_score", 0.0) or 0.0),
         "metadata": metadata,
     }
@@ -78,10 +90,15 @@ def artifact_from_episode_result(cfg: Dict[str, Any], episode_result: Dict[str, 
         except Exception:
             continue
     hidden_reader_risk_trend = 0.0
+    heavy_reader_signal_trend = 1.0
     try:
         hidden_reader_risk_trend = float(threshold_history.get("hidden_reader_risk_trend", 0.0) or 0.0)
     except Exception:
         hidden_reader_risk_trend = 0.0
+    try:
+        heavy_reader_signal_trend = float(threshold_history.get("heavy_reader_signal_trend", 1.0) or 1.0)
+    except Exception:
+        heavy_reader_signal_trend = 1.0
     return {
         "artifact_id": artifact_id,
         "artifact_type": "episode_output",
@@ -98,12 +115,14 @@ def artifact_from_episode_result(cfg: Dict[str, Any], episode_result: Dict[str, 
             float(len(list(gate.get("failed_checks", []) or []))) / 10.0
             + min(0.35, hidden_reader_risk * 0.25)
             + min(0.2, hidden_reader_risk_trend * 0.2),
+            + min(0.2, max(0.0, 0.72 - heavy_reader_signal_trend) * 0.25),
         ),
         "metadata": {
             "failed_checks": list(gate.get("failed_checks", []) or []),
             "world_instability": ((state.get("world") or {}).get("instability")),
             "hidden_reader_risk": round(hidden_reader_risk, 4),
             "hidden_reader_risk_trend": round(hidden_reader_risk_trend, 4),
+            "heavy_reader_signal_trend": round(heavy_reader_signal_trend, 4),
         },
     }
 

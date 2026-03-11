@@ -92,6 +92,7 @@ Until Layer 3 is rewritten through the patch method for this repository, use the
 - low heavy-reader signal trend now propagates into repair context, job ordering, preflight blocking, and pipeline runtime hardening, so "operationally stable but not addictive enough" output is pushed into repair-first mode instead of being allowed to normalize
 - long-run simulation, soak summary, and runtime dashboard summaries now also track heavy-reader signal floors and weak-signal counts, so unattended stability evidence includes whether upper-tier reader pressure is actually being sustained over time
 - weak heavy-reader signal trend now also penalizes portfolio boost readiness, forces release hold/stagger decisions, and blocks admission/promotion policy paths, so long-run "not addictive enough" output is treated as an operational policy failure rather than a post-hoc taste note
+- adapter normalization, certification guidance, and new-track bootstrap now also carry heavy-reader signal trend, so weak upper-tier reader pressure is not dropped when artifacts cross subsystem boundaries or when new track defaults are chosen
 
 ## Conservative Completion Estimate
 
