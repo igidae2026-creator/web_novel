@@ -85,6 +85,7 @@ def assess_preflight_bundle(
     world_instability = _as_float(world.get("instability"), 0.0)
     release_guard = _as_int(portfolio_memory.get("release_guard"), 5)
     shared_risk_alert = _as_int(portfolio_memory.get("shared_risk_alert"), 3)
+    platform_soak_pressure = _as_float(portfolio_memory.get("platform_soak_pressure"), 0.0)
     unresolved_promises = _as_int(promise_graph.get("unresolved_count", 0), 0)
     payoff_integrity = _as_float(promise_graph.get("payoff_integrity", 0.75), 0.75)
     regression_pressure = _recent_regression_pressure(story_state, episode)
@@ -138,6 +139,7 @@ def assess_preflight_bundle(
     payoff_risk = _clamp(1.0 - payoff_integrity)
     release_risk = _clamp((6 - release_guard) / 6.0)
     shared_risk = _clamp(shared_risk_alert / 10.0)
+    platform_soak_risk = _clamp(platform_soak_pressure / 0.34) if platform_soak_pressure > 0 else 0.0
     regression_risk = _clamp(regression_pressure / 2.0)
 
     risk_score = _clamp(
@@ -147,6 +149,7 @@ def assess_preflight_bundle(
         + payoff_risk * 0.12
         + release_risk * 0.10
         + shared_risk * 0.10
+        + platform_soak_risk * 0.14
         + regression_risk * 0.14
         + capability_pressure * 0.18
         + reader_quality_pressure * 0.2
@@ -171,6 +174,10 @@ def assess_preflight_bundle(
         risk_score = max(risk_score, 0.9)
     elif reader_quality_debt >= 0.24:
         risk_score = max(risk_score, 0.5)
+    if platform_soak_pressure >= 0.22:
+        risk_score = max(risk_score, 0.58)
+    if platform_soak_pressure >= 0.34:
+        risk_score = max(risk_score, 0.85)
     if arc_debt >= 0.3:
         risk_score = max(risk_score, 0.5)
 
@@ -200,6 +207,8 @@ def assess_preflight_bundle(
         blocking_reasons.append("hidden_reader_risk_trend_block")
     if runtime_repairs.get("heavy_reader_signal_block_required"):
         blocking_reasons.append("heavy_reader_signal_trend_block")
+    if platform_soak_pressure >= 0.34:
+        blocking_reasons.append("platform_soak_pressure_block")
 
     tier_cfg = dict((evaluation_cfg.get("risk_tiers", {}) or {}).get(risk_tier, {}) or {})
     runtime_policy = {
@@ -247,6 +256,13 @@ def assess_preflight_bundle(
         runtime_policy["max_revision_passes"] = max(int(runtime_policy.get("max_revision_passes", 2) or 2), 3)
         runtime_policy["causal_repair_retry_budget"] = max(int(runtime_policy.get("causal_repair_retry_budget", 2) or 2), 3)
         runtime_policy["request_timeout_seconds"] = max(int(runtime_policy.get("request_timeout_seconds", 150) or 150), 180)
+    if platform_soak_pressure >= 0.22:
+        runtime_policy["mode"] = "priority"
+        runtime_policy["max_revision_passes"] = max(int(runtime_policy.get("max_revision_passes", 2) or 2), 3)
+    if platform_soak_pressure >= 0.34:
+        runtime_policy["mode"] = "priority"
+        runtime_policy["causal_repair_retry_budget"] = max(int(runtime_policy.get("causal_repair_retry_budget", 2) or 2), 3)
+        runtime_policy["request_timeout_seconds"] = max(int(runtime_policy.get("request_timeout_seconds", 150) or 150), 180)
     if runtime_repairs.get("scope_policy_rebind_required"):
         runtime_policy["mode"] = "priority"
     if runtime_repairs.get("human_lift_sampling_required"):
@@ -266,6 +282,7 @@ def assess_preflight_bundle(
             "payoff_integrity": payoff_integrity,
             "release_guard": release_guard,
             "shared_risk_alert": shared_risk_alert,
+            "platform_soak_pressure": round(platform_soak_pressure, 4),
             "regression_pressure": regression_pressure,
             "blocked_generation": blocked_generation,
             "failed_bundles": failed_bundles,

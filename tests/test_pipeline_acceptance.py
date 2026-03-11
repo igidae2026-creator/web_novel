@@ -855,6 +855,85 @@ def test_prompt_surfaces_reader_and_market_pressure_directives():
     assert "시장 반응이 약하므로" in text
 
 
+def test_generate_episode_applies_platform_soak_pressure_to_generation_runtime(tmp_path, monkeypatch):
+    _patch_generation_stack(monkeypatch, gate_passed=True)
+
+    import engine.pipeline as pipeline
+
+    captured = {}
+
+    class _CapturingPrompts:
+        @staticmethod
+        def episode_plan(cfg, outline, episode, knobs, snap, fatigue_directive, sub_key, story_state=None):
+            captured["plan_knobs"] = dict(knobs)
+            return "EPISODE_PLAN"
+
+        @staticmethod
+        def episode_draft_json(cfg, plan, episode, knobs, style, sub_key, story_state=None):
+            captured["draft_knobs"] = dict(knobs)
+            return "EPISODE_DRAFT_JSON"
+
+        @staticmethod
+        def scoring_json(cfg, episode_text, episode):
+            return "EPISODE_SCORE_JSON"
+
+        @staticmethod
+        def episode_rewrite_json(*args, **kwargs):
+            return "EPISODE_REWRITE_JSON"
+
+    monkeypatch.setattr(pipeline, "PROMPTS", _CapturingPrompts())
+
+    cfg = load_config("config.yaml")
+    cfg["project"]["name"] = "platform-soak-runtime"
+    cfg["output"]["root_dir"] = str(tmp_path / "outputs")
+    cfg["external"]["rank_signals_csv"] = str(tmp_path / "rank_signals.csv")
+    cfg["safe_mode"] = False
+
+    out_dir = ensure_project_dirs(cfg)
+    state = StateStore(os.path.join(out_dir, "state.json"), safe_mode=False, project_dir_for_backup=out_dir)
+    state.load()
+    state.set("outline", "몰락한 천재 검사가 배신 이후 제국을 되찾는다")
+    state.data.setdefault("story_state_v2", {}).setdefault("portfolio_memory", {})["platform_soak_pressure"] = 0.3
+
+    llm = _FakeLLM(
+        [
+            "계획",
+            json.dumps(
+                {
+                    "episode_text": "강한 도입과 선명한 갈등이 있는 회차다.\n\n\"이번엔 내가 고른다.\"\n\n황태자가 검을 들었다.",
+                    "quote_line": "",
+                    "comment_hook": "",
+                    "cliffhanger": "문이 다시 열렸다.",
+                },
+                ensure_ascii=False,
+            ),
+            json.dumps(
+                {
+                    "hook_score": 0.88,
+                    "paywall_score": 0.84,
+                    "emotion_density": 0.8,
+                    "escalation": 0.81,
+                    "character_score": 0.79,
+                    "payoff_score": 0.8,
+                    "pacing_score": 0.78,
+                    "chemistry_score": 0.74,
+                    "repetition_score": 0.08,
+                },
+                ensure_ascii=False,
+            ),
+        ]
+    )
+    cost = CostTracker(cfg, out_dir)
+    ext = ExternalRankSignals(cfg)
+
+    record = generate_episode(cfg, state, llm, cost, ext, 1)
+
+    assert record["platform_soak_pressure_applied"]["platform_soak_pressure"] == pytest.approx(0.3)
+    assert record["platform_soak_pressure_applied"]["platform_soak_response"] == "caution"
+    assert record["knobs"]["hook_intensity"] > 0.75
+    assert record["knobs"]["compression"] > 0.67
+
+
 def test_generate_episode_applies_arc_pressure_to_generation_runtime(tmp_path, monkeypatch):
     _patch_generation_stack(monkeypatch, gate_passed=True)
 

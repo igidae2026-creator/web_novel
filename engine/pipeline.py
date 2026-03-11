@@ -459,6 +459,33 @@ def _apply_arc_pressure(state_data: dict, knobs: dict) -> tuple[dict, dict]:
         }
     return adjusted_knobs, applied
 
+
+def _apply_platform_soak_pressure(state_data: dict, knobs: dict, cfg: dict | None = None) -> tuple[dict, dict]:
+    story_state = dict(state_data.get("story_state_v2", {}) or {})
+    portfolio_memory = dict(story_state.get("portfolio_memory", {}) or {})
+    platform_soak_pressure = float(portfolio_memory.get("platform_soak_pressure", 0.0) or 0.0)
+    if platform_soak_pressure <= 0.0:
+        return knobs, {}
+
+    adjusted_knobs = dict(knobs or {})
+    applied: dict = {"platform_soak_pressure": round(platform_soak_pressure, 4)}
+    if platform_soak_pressure >= 0.22:
+        adjusted_knobs["hook_intensity"] = min(0.99, float(adjusted_knobs.get("hook_intensity", 0.7) or 0.7) + min(0.08, platform_soak_pressure * 0.18))
+        adjusted_knobs["compression"] = min(0.97, float(adjusted_knobs.get("compression", 0.6) or 0.6) + min(0.1, platform_soak_pressure * 0.22))
+        applied["platform_soak_response"] = "caution"
+    if platform_soak_pressure >= 0.34:
+        adjusted_knobs["payoff_intensity"] = min(0.99, float(adjusted_knobs.get("payoff_intensity", 0.7) or 0.7) + min(0.1, platform_soak_pressure * 0.2))
+        adjusted_knobs["novelty_boost"] = min(0.95, float(adjusted_knobs.get("novelty_boost", 0.5) or 0.5) + min(0.08, platform_soak_pressure * 0.16))
+        adjusted_knobs["rewrite_pressure"] = "high"
+        applied["platform_soak_response"] = "critical"
+        if cfg is not None:
+            cfg.setdefault("limits", {})
+            cfg.setdefault("model", {})
+            cfg["limits"]["max_revision_passes"] = max(int(cfg["limits"].get("max_revision_passes", 2) or 2), 3)
+            cfg["limits"]["causal_repair_retry_budget"] = max(int(cfg["limits"].get("causal_repair_retry_budget", 2) or 2), 3)
+            cfg["model"]["mode"] = "priority"
+    return adjusted_knobs, applied
+
 def ensure_project_dirs(cfg: dict) -> str:
     # Track-local outputs if track directory is provided
     tdir = None
@@ -611,6 +638,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     update_market_serialization(state.data, episode=episode, cfg=cfg)
     knobs, market_feedback_directives = _apply_market_feedback_pressure(state.data, knobs)
     update_portfolio_memory(state.data, cfg=cfg)
+    knobs, platform_soak_directives = _apply_platform_soak_pressure(state.data, knobs, cfg)
     event_plan = generate_event_plan(state.data, episode=episode)
     prepare_antagonist_plan(state.data, episode=episode, event_plan=event_plan)
     prepare_information_emotion(state.data, episode=episode, event_plan=event_plan)
@@ -1058,6 +1086,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
     meta["reader_quality_debt_applied"] = reader_quality_debt_directives
     meta["arc_pressure_applied"] = arc_pressure_directives
     meta["market_feedback_pressure_applied"] = market_feedback_directives
+    meta["platform_soak_pressure_applied"] = platform_soak_directives
     meta["generation_runtime_policy"] = {
         "max_revision_passes": int(cfg.get("limits", {}).get("max_revision_passes", 2) or 2),
         "causal_repair_retry_budget": int(cfg.get("limits", {}).get("causal_repair_retry_budget", 2) or 2),
@@ -1104,6 +1133,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         "reader_quality_debt_applied": reader_quality_debt_directives,
         "arc_pressure_applied": arc_pressure_directives,
         "market_feedback_pressure_applied": market_feedback_directives,
+        "platform_soak_pressure_applied": platform_soak_directives,
         "generation_runtime_policy": meta["generation_runtime_policy"],
         "cost": cost.snapshot(),
     }
