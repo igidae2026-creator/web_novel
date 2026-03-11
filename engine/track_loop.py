@@ -55,6 +55,16 @@ def _queue_bundle_severity(track_dirs: list[str]) -> str:
                     continue
         if hidden_reader_risk >= 0.55:
             severities.append("caution")
+        convergence_details = dict((((criteria.get("autonomous_convergence_trend", {}) or {}).get("details", {}) or {})))
+        hidden_reader_risk_trend = 0.0
+        try:
+            hidden_reader_risk_trend = float(convergence_details.get("hidden_reader_risk_trend", (payload.get("threshold_history", {}) or {}).get("hidden_reader_risk_trend", 0.0)) or 0.0)
+        except Exception:
+            hidden_reader_risk_trend = 0.0
+        if hidden_reader_risk_trend >= 0.5:
+            severities.append("critical")
+        elif hidden_reader_risk_trend >= 0.35:
+            severities.append("caution")
     if "critical" in severities:
         return "critical"
     if "caution" in severities:

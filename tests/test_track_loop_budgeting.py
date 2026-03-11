@@ -189,3 +189,61 @@ def test_run_queue_loop_pauses_for_hidden_reader_risk_pressure(tmp_path, monkeyp
     assert "Generation budget exhausted" in msg
     track_queue_state = load_queue_state()
     assert track_queue_state["status"] == "paused"
+
+
+def test_run_queue_loop_blocks_for_hidden_reader_risk_trend_pressure(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    track_dir = tmp_path / "domains" / "webnovel" / "tracks" / "track_trend"
+    _write_json(track_dir / "track.json", {"project": {"platform": "Munpia", "genre_bucket": "A"}})
+    _write_json(
+        track_dir / "outputs" / "final_threshold_eval.json",
+        {
+            "failed_bundles": [],
+            "failed_criteria": ["autonomous_convergence_trend"],
+            "criteria": {
+                "autonomous_convergence_trend": {
+                    "details": {
+                        "hidden_reader_risk_trend": 0.52,
+                    }
+                }
+            },
+            "next_required_repairs": [
+                {
+                    "criterion": "autonomous_convergence_trend",
+                    "repair": "repair_autonomous_convergence_trend",
+                    "priority": 10,
+                    "repair_context": {"hidden_reader_risk_trend": 0.52},
+                }
+            ],
+        },
+    )
+    save_queue_state(
+        {
+            "status": "running",
+            "track_dirs": [str(track_dir)],
+            "current_index": 0,
+            "last_error": None,
+        },
+        path=str(tmp_path / "domains" / "webnovel" / "tracks" / "queue_state.json"),
+    )
+    _write_json(
+        tmp_path / "runtime_config.json",
+        {
+            "generation_enabled": True,
+            "portfolio": {
+                "bundle_budgeting": {
+                    "enabled": True,
+                    "critical_generation_cap": 0,
+                    "caution_generation_cap": 1,
+                    "stable_generation_cap": 3,
+                }
+            },
+        },
+    )
+
+    ok, msg = run_queue_loop({"safe_mode": True}, max_steps=1)
+
+    assert ok is False
+    assert "Generation budget exhausted" in msg
+    track_queue_state = load_queue_state()
+    assert track_queue_state["status"] == "blocked"

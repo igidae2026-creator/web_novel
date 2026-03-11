@@ -96,10 +96,26 @@ def _load_hidden_reader_risk(track_dir: str) -> float:
     return round(risk_total, 4)
 
 
+def _load_hidden_reader_risk_trend(track_dir: str) -> float:
+    path = os.path.join(track_dir, "outputs", "final_threshold_eval.json")
+    if not os.path.exists(path):
+        return 0.0
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return 0.0
+    details = dict((((payload.get("criteria", {}) or {}).get("autonomous_convergence_trend", {}) or {}).get("details", {}) or {}))
+    if "hidden_reader_risk_trend" in details:
+        return float(details.get("hidden_reader_risk_trend", 0.0) or 0.0)
+    return float((payload.get("threshold_history", {}) or {}).get("hidden_reader_risk_trend", 0.0) or 0.0)
+
+
 def _track_priority_key(track_dir: str) -> tuple:
     bundles = _load_failed_bundles(track_dir)
     criteria = _load_failed_criteria(track_dir)
     hidden_reader_risk = _load_hidden_reader_risk(track_dir)
+    hidden_reader_risk_trend = _load_hidden_reader_risk_trend(track_dir)
     critical_count = sum(1 for bundle in bundles if bundle in CRITICAL_BUNDLES)
     caution_count = sum(1 for bundle in bundles if bundle in CAUTION_BUNDLES)
     reader_quality_count = sum(
@@ -117,10 +133,13 @@ def _track_priority_key(track_dir: str) -> tuple:
     other_count = max(0, len(bundles) - critical_count - caution_count)
     has_eval = os.path.exists(os.path.join(track_dir, "outputs", "final_threshold_eval.json"))
     hidden_reader_risk_band = 1 if hidden_reader_risk >= 0.45 else 0
+    hidden_reader_risk_trend_band = 1 if hidden_reader_risk_trend >= 0.35 else 0
     return (
         -critical_count,
         -caution_count,
         -reader_quality_count,
+        -hidden_reader_risk_trend_band,
+        -hidden_reader_risk_trend,
         -hidden_reader_risk_band,
         -hidden_reader_risk,
         -other_count,

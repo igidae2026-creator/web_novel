@@ -86,6 +86,7 @@ Until Layer 3 is rewritten through the patch method for this repository, use the
 - pipeline runtime repair application now also consumes hidden reader-risk trend repair context, so if generation still reaches the runtime layer it is forced toward stronger novelty/compression recovery and explicit fail-closed blocking metadata
 - supervisor update events now also log hidden reader-risk trend and its priority, so append-only event history can explain long-run fatigue blocks without opening the latest supervisor snapshot separately
 - `final_threshold_evaluated` metrics rows and events now also carry hidden reader-risk trend and its priority, so append-only replay surfaces preserve the same long-run fatigue diagnosis as the artifact itself
+- track ordering and queue-loop bundle budgeting now also treat hidden reader-risk trend as a first-class signal, so long-run reader-fatigue pressure can reorder tracks and exhaust generation budget before weaker serial patterns spread portfolio-wide
 
 ## Conservative Completion Estimate
 
