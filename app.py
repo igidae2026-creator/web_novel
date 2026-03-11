@@ -3,6 +3,7 @@ import time
 import json
 import streamlit as st
 from engine.safe_io import safe_copy_bytes, safe_write_text
+from engine.runtime_supervisor import load_supervisor_state
 
 from engine.config import load_config, save_config
 from engine.state import StateStore
@@ -540,6 +541,16 @@ with tabs[4]:
     if os.path.exists(final_threshold_path):
         with st.expander("Latest final_threshold_eval.json", expanded=False):
             st.json(json.load(open(final_threshold_path, "r", encoding="utf-8")))
+    supervisor_path = os.path.join("domains", "webnovel", "runtime", "supervisor_state.json")
+    if os.path.exists(supervisor_path):
+        supervisor_state = load_supervisor_state(supervisor_path)
+        st.subheader("Supervisor Risk")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Supervisor status", str(supervisor_state.get("status") or "idle"))
+        c2.metric("Hidden risk trend", f"{float(supervisor_state.get('hidden_reader_risk_trend', 0.0) or 0.0):.2f}")
+        c3.metric("Trend priority", str(supervisor_state.get("reader_risk_trend_priority") or "none"))
+        with st.expander("Latest supervisor_state.json", expanded=False):
+            st.json(supervisor_state)
 
     st.subheader("Phase Health")
     from engine.phase_health import check as phase_check

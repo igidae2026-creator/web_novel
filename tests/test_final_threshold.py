@@ -310,6 +310,7 @@ def test_final_threshold_syncs_supervisor_with_report(tmp_path):
     assert supervisor["failed_criteria"] == report["failed_criteria"]
     assert supervisor["failed_bundles"] == report["failed_bundles"]
     assert supervisor["bundle_priority_mode"] in {None, "criterion_repair", "caution_repair", "critical_repair"}
+    assert supervisor["reader_risk_trend_priority"] in {None, "high", "critical"}
 
 
 def test_final_threshold_can_use_soak_history_fallback(tmp_path):
@@ -455,6 +456,7 @@ def test_final_threshold_blocks_convergence_when_hidden_reader_risk_trend_stays_
     assert report["criteria"]["soak_steady_noop_dominance"]["passed"] is True
     assert report["criteria"]["autonomous_convergence_trend"]["passed"] is False
     assert report["criteria"]["autonomous_convergence_trend"]["details"]["hidden_reader_risk_trend"] == 0.46
+    assert load_supervisor_state(str(supervisor_path))["reader_risk_trend_priority"] == "high"
 
 
 def test_final_threshold_history_accumulates_ready_ratio(tmp_path):

@@ -1065,15 +1065,22 @@ def _sync_supervisor_threshold(
     reader_quality_priority = None
     if runtime_repairs.get("hook_bias") or runtime_repairs.get("payoff_bias") or runtime_repairs.get("rewrite_pressure"):
         reader_quality_priority = "critical" if runtime_repairs.get("hook_bias", 0.0) or runtime_repairs.get("rewrite_pressure") == "high" else "high"
+    hidden_reader_risk_trend = _as_float((((report.get("criteria", {}) or {}).get("autonomous_convergence_trend", {}) or {}).get("details", {}) or {}).get("hidden_reader_risk_trend"), 0.0)
+    reader_risk_trend_priority = None
+    if hidden_reader_risk_trend >= 0.5:
+        reader_risk_trend_priority = "critical"
+    elif hidden_reader_risk_trend >= 0.35:
+        reader_risk_trend_priority = "high"
     state["final_threshold_ready"] = bool(report.get("final_threshold_ready"))
     state["final_threshold_path"] = os.path.join(report.get("out_dir", ""), FINAL_THRESHOLD_FILENAME)
     state["failed_criteria"] = list(report.get("failed_criteria", []) or [])
     state["failed_bundles"] = failed_bundles
     state["bundle_priority_mode"] = bundle_priority_mode
     state["reader_quality_priority"] = reader_quality_priority
+    state["reader_risk_trend_priority"] = reader_risk_trend_priority
     state["runtime_repairs"] = runtime_repairs
     state["quality_lift_if_human_intervenes"] = _as_float(report.get("quality_lift_if_human_intervenes"), 1.0)
-    state["hidden_reader_risk_trend"] = _as_float((((report.get("criteria", {}) or {}).get("autonomous_convergence_trend", {}) or {}).get("details", {}) or {}).get("hidden_reader_risk_trend"), 0.0)
+    state["hidden_reader_risk_trend"] = hidden_reader_risk_trend
     if report.get("final_threshold_ready"):
         if state.get("status") == "blocked" and state.get("stop_reason") == "final_threshold_failed":
             state["status"] = "running"

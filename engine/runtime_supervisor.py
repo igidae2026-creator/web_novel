@@ -33,8 +33,10 @@ def _default_supervisor_state() -> Dict[str, Any]:
         "failed_bundles": [],
         "bundle_priority_mode": None,
         "reader_quality_priority": None,
+        "reader_risk_trend_priority": None,
         "runtime_repairs": {},
         "quality_lift_if_human_intervenes": None,
+        "hidden_reader_risk_trend": 0.0,
     }
 
 
