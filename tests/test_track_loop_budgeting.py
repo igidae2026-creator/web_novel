@@ -207,6 +207,7 @@ def test_run_queue_loop_blocks_for_hidden_reader_risk_trend_pressure(tmp_path, m
                 "autonomous_convergence_trend": {
                     "details": {
                         "hidden_reader_risk_trend": 0.52,
+                        "heavy_reader_signal_trend": 0.58,
                     }
                 }
             },
@@ -249,11 +250,17 @@ def test_run_queue_loop_blocks_for_hidden_reader_risk_trend_pressure(tmp_path, m
     assert ok is False
     assert "Generation budget exhausted" in msg
     assert "hidden_reader_risk_trend_max=0.52" in msg
+    assert "heavy_reader_signal_trend_min=0.58" in msg
     track_queue_state = load_queue_state()
     assert track_queue_state["status"] == "blocked"
     assert track_queue_state["bundle_budgeting"]["hidden_reader_risk_trend_summary"]["max"] == 0.52
+    assert track_queue_state["bundle_budgeting"]["heavy_reader_signal_trend_summary"]["min"] == 0.58
     assert track_queue_state["bundle_budgeting"]["hidden_reader_risk_trend_summary"]["critical_tracks"] == ["track_trend"]
+    assert track_queue_state["bundle_budgeting"]["heavy_reader_signal_trend_summary"]["critical_tracks"] == ["track_trend"]
     history = json.loads((tmp_path / "domains" / "webnovel" / "tracks" / "queue_history.json").read_text(encoding="utf-8"))
     trend_summary = history["bundle_budgeting"]["hidden_reader_risk_trend_summary"]
     assert trend_summary["max"] == 0.52
     assert trend_summary["top_tracks"][0]["track"] == "track_trend"
+    signal_summary = history["bundle_budgeting"]["heavy_reader_signal_trend_summary"]
+    assert signal_summary["min"] == 0.58
+    assert signal_summary["weakest_tracks"][0]["track"] == "track_trend"

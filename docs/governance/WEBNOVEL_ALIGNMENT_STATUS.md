@@ -94,6 +94,7 @@ Until Layer 3 is rewritten through the patch method for this repository, use the
 - weak heavy-reader signal trend now also penalizes portfolio boost readiness, forces release hold/stagger decisions, and blocks admission/promotion policy paths, so long-run "not addictive enough" output is treated as an operational policy failure rather than a post-hoc taste note
 - adapter normalization, certification guidance, and new-track bootstrap now also carry heavy-reader signal trend, so weak upper-tier reader pressure is not dropped when artifacts cross subsystem boundaries or when new track defaults are chosen
 - final-threshold history, supervisor snapshots, and append-only final-threshold/supervisor events now also persist heavy-reader signal trend and priority, so long-run convergence audits can replay not just fatigue risk but upper-tier reader-pressure weakness itself
+- queue history, queue-state bundle budgeting, and system-status snapshots now also surface heavy-reader signal summaries, so runtime operators can see weak upper-tier reader pressure directly from queue/system surfaces without reopening per-track artifacts
 
 ## Conservative Completion Estimate
 

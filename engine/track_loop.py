@@ -70,6 +70,57 @@ def _hidden_reader_risk_trend_summary(track_dirs: list[str]) -> Dict[str, Any]:
     }
 
 
+def _heavy_reader_signal_trend_summary(track_dirs: list[str]) -> Dict[str, Any]:
+    values = []
+    critical_tracks = []
+    caution_tracks = []
+    for track_dir in track_dirs:
+        path = os.path.join(track_dir, "outputs", "final_threshold_eval.json")
+        if not os.path.exists(path):
+            continue
+        try:
+            payload = json.load(open(path, "r", encoding="utf-8"))
+        except Exception:
+            continue
+        criteria = dict(payload.get("criteria") or {})
+        convergence_details = dict((((criteria.get("autonomous_convergence_trend", {}) or {}).get("details", {}) or {})))
+        try:
+            trend = float(
+                convergence_details.get(
+                    "heavy_reader_signal_trend",
+                    (payload.get("threshold_history", {}) or {}).get("heavy_reader_signal_trend", 1.0),
+                )
+                or 1.0
+            )
+        except Exception:
+            trend = 1.0
+        track_id = os.path.basename(track_dir.rstrip(os.sep)) or track_dir
+        values.append({"track": track_id, "trend": round(trend, 4)})
+        if 0.0 < trend < 0.62:
+            critical_tracks.append(track_id)
+        elif 0.0 < trend < 0.72:
+            caution_tracks.append(track_id)
+    if not values:
+        return {
+            "track_count": 0,
+            "mean": 0.0,
+            "min": 0.0,
+            "critical_tracks": [],
+            "caution_tracks": [],
+            "weakest_tracks": [],
+        }
+    ordered = sorted(values, key=lambda item: (float(item.get("trend", 1.0) or 1.0), str(item.get("track") or "")))
+    trends = [float(item["trend"]) for item in ordered]
+    return {
+        "track_count": len(ordered),
+        "mean": round(sum(trends) / len(trends), 4),
+        "min": round(min(trends), 4),
+        "critical_tracks": critical_tracks[:5],
+        "caution_tracks": caution_tracks[:5],
+        "weakest_tracks": ordered[:3],
+    }
+
+
 def _queue_bundle_severity(track_dirs: list[str]) -> str:
     severities = []
     for track_dir in track_dirs:
@@ -198,6 +249,7 @@ def run_queue_loop(cfg: Dict[str, Any], max_steps: int = 1) -> Tuple[bool, str]:
         track_dirs = list(q0.get("track_dirs", []) or [])
         severity = _queue_bundle_severity(track_dirs)
         hidden_reader_risk_summary = _hidden_reader_risk_trend_summary(track_dirs)
+        heavy_reader_signal_summary = _heavy_reader_signal_trend_summary(track_dirs)
         generation_cap = capability_generation_cap(runtime_cfg, severity)
         steps_budget = min(max(1, int(max_steps)), max(0, generation_cap))
         h["bundle_budgeting"] = {
@@ -205,6 +257,7 @@ def run_queue_loop(cfg: Dict[str, Any], max_steps: int = 1) -> Tuple[bool, str]:
             "generation_cap": generation_cap,
             "requested_steps": int(max_steps),
             "hidden_reader_risk_trend_summary": hidden_reader_risk_summary,
+            "heavy_reader_signal_trend_summary": heavy_reader_signal_summary,
         }
         if steps_budget <= 0:
             queued_repairs = _ensure_queue_repair_work(track_dirs)
@@ -213,6 +266,8 @@ def run_queue_loop(cfg: Dict[str, Any], max_steps: int = 1) -> Tuple[bool, str]:
                 h["last_msg"] += f"; queued_repairs={queued_repairs}"
             if hidden_reader_risk_summary.get("max", 0.0):
                 h["last_msg"] += f"; hidden_reader_risk_trend_max={hidden_reader_risk_summary['max']}"
+            if heavy_reader_signal_summary.get("min", 0.0):
+                h["last_msg"] += f"; heavy_reader_signal_trend_min={heavy_reader_signal_summary['min']}"
             if severity == "critical":
                 q0["status"] = "blocked"
             elif severity == "caution" and q0.get("status") == "running":

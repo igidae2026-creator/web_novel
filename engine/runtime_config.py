@@ -190,11 +190,16 @@ def write_system_status_snapshot(
     safe_mode: bool = False,
     project_dir_for_backup: str | None = None,
 ) -> Dict[str, Any]:
+    hidden_reader_risk_summary = summarize_hidden_reader_risk(tracks_root=tracks_root)
     payload = {
         "updated_at": datetime.now().isoformat(timespec="seconds"),
         "system_status": dict(system_status or {}),
         "runtime_config": dict(runtime_cfg or load_runtime_config()),
-        "hidden_reader_risk_summary": summarize_hidden_reader_risk(tracks_root=tracks_root),
+        "hidden_reader_risk_summary": hidden_reader_risk_summary,
+        "heavy_reader_signal_summary": {
+            "mean_heavy_reader_signal_trend": hidden_reader_risk_summary.get("mean_heavy_reader_signal_trend", 0.0),
+            "weak_signal_tracks": hidden_reader_risk_summary.get("weak_signal_tracks", 0),
+        },
     }
     text = json.dumps(payload, ensure_ascii=False, indent=2)
     _ensure_parent_dir(path)

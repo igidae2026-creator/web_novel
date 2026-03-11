@@ -1492,6 +1492,8 @@ def test_system_status_snapshot_writes_global_and_local_outputs():
 
         assert payload["system_status"]["iteration_state"] == "running"
         assert payload["hidden_reader_risk_summary"]["critical_tracks"] == 1
+        assert payload["heavy_reader_signal_summary"]["mean_heavy_reader_signal_trend"] == 0.0
+        assert payload["heavy_reader_signal_summary"]["weak_signal_tracks"] == 0
         assert os.path.exists(global_path)
         assert os.path.exists(os.path.join(local_out_dir, "system_status.json"))
 
