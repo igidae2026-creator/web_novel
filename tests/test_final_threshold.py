@@ -460,6 +460,14 @@ def test_final_threshold_blocks_convergence_when_hidden_reader_risk_trend_stays_
     repair = next(item for item in report["next_required_repairs"] if item["criterion"] == "autonomous_convergence_trend")
     assert repair["repair_context"]["hidden_reader_risk_trend"] == 0.46
     assert repair["repair_context"]["reader_risk_trend_repair_required"] is True
+    metrics_rows = [json.loads(line) for line in (out_dir / "metrics.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    ft_row = next(row for row in metrics_rows if row.get("type") == "final_threshold_eval")
+    assert ft_row["hidden_reader_risk_trend"] == 0.46
+    assert ft_row["reader_risk_trend_priority"] == "high"
+    event_rows = [json.loads(line) for line in (out_dir / "events.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+    ft_event = next(row for row in event_rows if row.get("type") == "final_threshold_evaluated")
+    assert ft_event["payload"]["hidden_reader_risk_trend"] == 0.46
+    assert ft_event["payload"]["reader_risk_trend_priority"] == "high"
 
 
 def test_final_threshold_history_accumulates_ready_ratio(tmp_path):

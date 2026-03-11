@@ -959,6 +959,8 @@ def evaluate_final_threshold_bundle(
         "capability_bundles": capability_bundles,
         "cycle_context": cycle_context,
     }
+    hidden_reader_risk_trend = _as_float((((criteria.get("autonomous_convergence_trend", {}) or {}).get("details", {}) or {}).get("hidden_reader_risk_trend")), 0.0)
+    reader_risk_trend_priority = "critical" if hidden_reader_risk_trend >= 0.5 else "high" if hidden_reader_risk_trend >= 0.35 else None
 
     safe_write_text(
         final_path,
@@ -974,6 +976,8 @@ def evaluate_final_threshold_bundle(
             "final_threshold_ready": report["final_threshold_ready"],
             "failed_criteria": failed_criteria,
             "failed_bundles": failed_bundles,
+            "hidden_reader_risk_trend": hidden_reader_risk_trend,
+            "reader_risk_trend_priority": reader_risk_trend_priority,
         },
         safe_mode=safe_mode,
         project_dir_for_backup=out_dir,
@@ -986,6 +990,8 @@ def evaluate_final_threshold_bundle(
             "final_threshold_ready": report["final_threshold_ready"],
             "failed_criteria": failed_criteria,
             "failed_bundles": failed_bundles,
+            "hidden_reader_risk_trend": hidden_reader_risk_trend,
+            "reader_risk_trend_priority": reader_risk_trend_priority,
         },
         safe_mode=safe_mode,
     )
