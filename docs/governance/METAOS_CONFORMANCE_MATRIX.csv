@@ -1,0 +1,2 @@
+project_type,adapter_name,status,verdict,reason,contract_version,checks_required
+web_novel,web_novel,ready,accept,adapter_ready,1.0.0,"adapter_resolution|scope_policy|admission_snapshot|job_queue_contract|supervisor_contract|artifact_normalization|promotion_policy|promotion_snapshot"

@@ -1,0 +1,13 @@
+**Result**
+
+Bottleneck: the prose readability gate only punished long sentences and wall-of-text density. It could still pass a single crowded paragraph with acceptable sentence lengths, which is a bad fit for Korean web-novel scanability and weakens retention stability.
+
+Change: I tightened [`engine/prose_guard.py`](/home/meta_os/web_novel/engine/prose_guard.py) to measure paragraph sentence crowding, expose a `crowded_paragraph_ratio`, flag `crowded_paragraphs`, and penalize paragraphs that pack 5+ beats into one block. I added a regression case in [`tests/test_quality_gate.py`](/home/meta_os/web_novel/tests/test_quality_gate.py) proving the quality gate now rejects that failure mode while preserving existing readable-prose behavior.
+
+Files modified:
+- [`engine/prose_guard.py`](/home/meta_os/web_novel/engine/prose_guard.py)
+- [`tests/test_quality_gate.py`](/home/meta_os/web_novel/tests/test_quality_gate.py)
+
+Validation result: `pytest -q tests/test_quality_gate.py` passed with `17 passed`; `pytest -q tests/test_top_tier_perception.py tests/test_content_ceiling.py` passed with `2 passed`.
+
+Remaining risk: this is still heuristic prose evaluation. It improves serialized readability pressure, but it does not yet model richer Korean-specific rhythm signals like dialogue cadence, beat spacing by scene type, or intentional exceptions for climax paragraphs.

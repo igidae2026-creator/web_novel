@@ -1,0 +1,144 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "METAOS Rule Card",
+  "type": "object",
+  "required": [
+    "rule_id",
+    "canonical_text",
+    "type",
+    "layer",
+    "priority",
+    "status",
+    "sources"
+  ],
+  "properties": {
+    "rule_id": {
+      "type": "string",
+      "pattern": "^R[0-9]{5,}$"
+    },
+    "canonical_text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "identity",
+        "invariant",
+        "runtime",
+        "governance",
+        "operations",
+        "policy",
+        "domain",
+        "exception",
+        "unknown"
+      ]
+    },
+    "layer": {
+      "type": "string",
+      "enum": [
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5",
+        "UNASSIGNED"
+      ]
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "critical",
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "canonical",
+        "merged",
+        "conflict",
+        "dropped",
+        "moved"
+      ]
+    },
+    "domain_scope": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "applies_to": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "exceptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "conflict_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "derived_from": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "normalized_subject": {
+      "type": "string"
+    },
+    "normalized_predicate": {
+      "type": "string"
+    },
+    "normalized_object": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "doc_path",
+          "excerpt"
+        ],
+        "properties": {
+          "doc_path": {
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          },
+          "line_start": {
+            "type": "integer"
+          },
+          "line_end": {
+            "type": "integer"
+          },
+          "excerpt": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      }
+    }
+  }
+}

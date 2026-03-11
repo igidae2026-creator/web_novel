@@ -1,0 +1,8 @@
+boost_priority: top_percent
+max_boost_per_platform: 1
+max_boost_per_platform_bucket: 1
+rotation:
+  min_days_between_boost: 1
+  prefer_least_recent: true
+  prefer_low_boost_count: true
+version: v1_structural

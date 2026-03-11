@@ -1,0 +1,29 @@
+**Bottleneck**
+
+The highest-leverage gap was cliffhanger validation. The repo claimed addictive ending enforcement, but [`validate_cliffhanger`](\/home\/meta_os\/web_novel\/engine\/cliffhanger_engine.py#L108) still accepted generic suspense lines like “누가 살아남을까?” if the plan metadata was strong. That weakens retention stability and lets thin episode endings slip through the gate.
+
+**Change**
+
+I tightened the cliffhanger validator in [`engine/cliffhanger_engine.py`](\/home\/meta_os\/web_novel\/engine\/cliffhanger_engine.py#L21) and [`engine/cliffhanger_engine.py`](\/home\/meta_os\/web_novel\/engine\/cliffhanger_engine.py#L108). It now requires:
+- a longer minimum end-line
+- explicit next-question pressure
+- actual lexical linkage to the planned conflict target or planned consequence, not just generic suspense vocabulary
+
+I added regression coverage in [`tests/test_fun_cliffhanger_engine.py`](\/home\/meta_os\/web_novel\/tests\/test_fun_cliffhanger_engine.py#L28) and [`tests/test_quality_gate.py`](\/home\/meta_os\/web_novel\/tests\/test_quality_gate.py#L287) to prove generic cliffhangers are rejected even when the carryover plan is otherwise strong.
+
+Files modified:
+- [`engine/cliffhanger_engine.py`](\/home\/meta_os\/web_novel\/engine\/cliffhanger_engine.py)
+- [`tests/test_fun_cliffhanger_engine.py`](\/home\/meta_os\/web_novel\/tests\/test_fun_cliffhanger_engine.py)
+- [`tests/test_quality_gate.py`](\/home\/meta_os\/web_novel\/tests\/test_quality_gate.py)
+
+**Validation**
+
+Ran:
+- `pytest -q tests/test_fun_cliffhanger_engine.py`
+- `pytest -q tests/test_quality_gate.py tests/test_top_tier_perception.py`
+
+Result: `20` tests passed.
+
+**Remaining Risk**
+
+This is still token-level semantic matching, not a full Korean discourse validator. It will block generic endings more reliably, but it can still miss subtler cases where a line is specific in wording yet weak in dramatic force.

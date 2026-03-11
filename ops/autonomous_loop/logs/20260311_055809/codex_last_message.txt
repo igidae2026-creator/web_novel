@@ -1,0 +1,17 @@
+**Improvement Bundle**
+
+Bottleneck: the acceptance gate could still pass episodes with strong surface scores while the projected protagonist state had collapsed into pure backlash, which weakens persuasive protagonist fantasy and long-run character pressure.
+
+Change: I added a direct `protagonist_momentum` gate in [engine/quality_gate.py](/home/meta_os/web_novel/engine/quality_gate.py#L36) and wired its threshold into [config.yaml](/home/meta_os/web_novel/config.yaml#L69). The check scores projected protagonist momentum from progress, backlash, urgency, decision pressure, and rival lead, then rejects episodes where pressure exists without enough countervailing agency. I also added regression coverage in [tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py#L612) and updated the end-to-end perception slice in [tests/test_top_tier_perception.py](/home/meta_os/web_novel/tests/test_top_tier_perception.py#L116). Governance coverage was recorded in [docs/governance/COVERAGE_AUDIT.csv](/home/meta_os/web_novel/docs/governance/COVERAGE_AUDIT.csv#L35) and reflected in [docs/governance/WEBNOVEL_QUALITY_MAP.md](/home/meta_os/web_novel/docs/governance/WEBNOVEL_QUALITY_MAP.md#L29).
+
+Files modified:
+- [engine/quality_gate.py](/home/meta_os/web_novel/engine/quality_gate.py#L36)
+- [config.yaml](/home/meta_os/web_novel/config.yaml#L69)
+- [tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py#L54)
+- [tests/test_top_tier_perception.py](/home/meta_os/web_novel/tests/test_top_tier_perception.py#L116)
+- [docs/governance/COVERAGE_AUDIT.csv](/home/meta_os/web_novel/docs/governance/COVERAGE_AUDIT.csv#L35)
+- [docs/governance/WEBNOVEL_QUALITY_MAP.md](/home/meta_os/web_novel/docs/governance/WEBNOVEL_QUALITY_MAP.md#L29)
+
+Validation result: `pytest tests/test_quality_gate.py tests/test_top_tier_perception.py` passed, 14/14. `python -m compileall engine/quality_gate.py` also passed.
+
+Remaining risk: the new momentum formula is still heuristic. It protects against obvious protagonist-collapse failures, but it does not yet distinguish “earned setback with strong agency” from “reader-perceived loss of fantasy” using actual text-level evidence.

@@ -1,0 +1,20 @@
+**Improvement Bundle**
+
+- Bottleneck: the acceptance gate relied on `pacing_score` but did not block serialization rhythm collapse, so episodes could surface-pass while accumulating unresolved spike/release debt that hurts payoff cadence and reader retention.
+- Change: added pacing-debt checks to the gate in [engine/quality_gate.py](/home/meta_os/web_novel/engine/quality_gate.py#L155), set runtime thresholds in [config.yaml](/home/meta_os/web_novel/config.yaml#L59), and added rewrite guidance for those failures in [engine/prompts.py](/home/meta_os/web_novel/engine/prompts.py#L220). I also added a regression test proving a surface-pass episode is rejected when `story_state.pacing.release_debt` is too high in [tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py#L365).
+
+**Files Modified**
+
+- [engine/quality_gate.py](/home/meta_os/web_novel/engine/quality_gate.py)
+- [engine/prompts.py](/home/meta_os/web_novel/engine/prompts.py)
+- [config.yaml](/home/meta_os/web_novel/config.yaml)
+- [tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py)
+
+**Validation**
+
+- `pytest tests/test_quality_gate.py tests/test_fun_tension_wave.py -q` -> `14 passed`
+- `pytest tests/test_top_tier_perception.py -q` -> `1 passed`
+
+**Remaining Risk**
+
+- This protects pacing debt already present in story state, but it still depends on `engine/tension_wave.py` producing good debt signals. The next likely bottleneck is improving how rhythm debt is inferred, not just how it is gated.

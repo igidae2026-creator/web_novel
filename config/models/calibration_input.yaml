@@ -1,0 +1,15 @@
+
+# Paste DeepResearch derived parameters here
+competition:
+  difficulty:
+    platform:
+      KakaoPage: 1.2
+      NaverSeries: 1.1
+      Munpia: 1.0
+      Ridibooks: 1.0
+      Novelpia: 0.9
+      Joara: 0.8
+
+inertia:
+  hold_strength: 0.7
+  rebound_risk: 0.4

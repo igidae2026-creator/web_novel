@@ -1,0 +1,32 @@
+**Bottleneck**
+
+The acceptance gate was enforcing local thresholds but not the already-computed multi-objective balance profile. That left a false-positive path where an episode could pass hook/payoff/retention checks while still being globally unbalanced, which weakens stable upper-tier production.
+
+**Change**
+
+I added balance enforcement to [`engine/quality_gate.py`](/home/meta_os/web_novel/engine/quality_gate.py), using the existing protected objective profile to gate on:
+- minimum balanced objective total
+- maximum objective variance
+- minimum weakest protected axis
+
+I wired the runtime callsite in [`engine/pipeline.py`](/home/meta_os/web_novel/engine/pipeline.py) to pass the computed objective scores into the gate, added the new thresholds in [`config.yaml`](/home/meta_os/web_novel/config.yaml), and expanded coverage in [`tests/test_quality_gate.py`](/home/meta_os/web_novel/tests/test_quality_gate.py) and [`tests/test_top_tier_perception.py`](/home/meta_os/web_novel/tests/test_top_tier_perception.py).
+
+**Files Modified**
+
+[`engine/quality_gate.py`](/home/meta_os/web_novel/engine/quality_gate.py)  
+[`engine/pipeline.py`](/home/meta_os/web_novel/engine/pipeline.py)  
+[`config.yaml`](/home/meta_os/web_novel/config.yaml)  
+[`tests/test_quality_gate.py`](/home/meta_os/web_novel/tests/test_quality_gate.py)  
+[`tests/test_top_tier_perception.py`](/home/meta_os/web_novel/tests/test_top_tier_perception.py)  
+
+**Validation Result**
+
+`pytest -q tests/test_quality_gate.py`  
+`pytest -q tests/test_top_tier_perception.py`  
+`pytest -q tests/test_absolute_ceiling_regression.py tests/test_content_ceiling.py`  
+
+Result: `55 passed`
+
+**Remaining Risk**
+
+The new balance thresholds are static. They should reduce thin-but-passing episodes now, but they may need tuning against real generated episode distributions if the gate becomes too strict or still lets certain genre-specific imbalances through.

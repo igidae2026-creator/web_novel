@@ -1,0 +1,37 @@
+rank_signals:
+  required_columns:
+    - date
+    - platform
+    - chart_size
+    - rank
+  optional_columns:
+    - event_flag
+    - notes
+    - genre_bucket
+
+revenue_inputs:
+  required_columns:
+    - date
+    - platform
+    - exposures
+    - clicks
+    - purchases
+    - repurchases
+    - revenue
+    - paying_users
+  optional_columns:
+    - genre_bucket
+    - retention_d7
+
+campaign_inputs:
+  required_columns:
+    - date
+    - platform
+    - campaign
+    - spend
+    - revenue
+  optional_columns:
+    - impressions
+    - clicks
+    - purchases
+    - notes

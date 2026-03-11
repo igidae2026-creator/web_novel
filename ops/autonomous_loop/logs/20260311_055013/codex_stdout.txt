@@ -1,0 +1,11 @@
+**Improvement Bundle**
+
+Bottleneck: the acceptance gate modeled retention as richer than it actually enforced. `predictive_retention.py` already tracks aftermath, threat proximity, payoff debt, chemistry pressure, information gap, and sustainability, but the gate only required unresolved-thread pressure and curiosity debt. That left a path for episodes with strong surface scores to pass while still being structurally weak for serialized carryover.
+
+Change: I extended the gate in [engine/quality_gate.py](/home/meta_os/web_novel/engine/quality_gate.py#L72) to optionally enforce those missing retention-topology checks, wired conservative runtime thresholds into [config.yaml](/home/meta_os/web_novel/config.yaml#L32), and expanded [tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py#L6) with a positive case plus a new regression proving a surface-strong episode is rejected when carryover topology is thin at [tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py#L502).
+
+Files modified: [engine/quality_gate.py](/home/meta_os/web_novel/engine/quality_gate.py), [config.yaml](/home/meta_os/web_novel/config.yaml), [tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py).
+
+Validation result: `pytest tests/test_quality_gate.py` passed `10/10`, and `pytest tests/test_top_tier_perception.py tests/test_absolute_ceiling_regression.py tests/test_fun_retention_engine.py` passed `49/49`.
+
+Remaining risk: this tightens the runtime default gate, so some previously accepted generations may now fail more often until prompts or repair logic learn to reliably produce stronger aftermath/information/chemistry pressure. Also, this workspace is not a git repo, so I could not produce `git status`/`git diff` output.

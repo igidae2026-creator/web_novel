@@ -1,0 +1,27 @@
+**Bottleneck**
+
+The highest-leverage bottleneck was the acceptance gate being too shallow. It could still pass episodes with decent surface scores while payoff setup/payoff integrity was drifting or the projected world state was becoming too unstable, which weakens payoff, coherence, and long-run reader trust.
+
+**Change**
+
+I tightened the runtime gate in [engine/quality_gate.py](/home/meta_os/web_novel/engine/quality_gate.py#L13) so it can enforce three projected-state checks in addition to the existing score/retention/ceiling/causality checks:
+
+- `payoff_integrity_min`
+- `payoff_corruption_flags_max`
+- `world_instability_max`
+
+The pipeline now passes projected story state into that gate at [engine/pipeline.py](/home/meta_os/web_novel/engine/pipeline.py#L455), so the rewrite/accept decision uses the actual next-state consequences, not just surface scoring. I activated the thresholds in [config.yaml](/home/meta_os/web_novel/config.yaml#L32), added regression coverage in [tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py#L6) and [tests/test_top_tier_perception.py](/home/meta_os/web_novel/tests/test_top_tier_perception.py#L84), and recorded the new coverage in [docs/governance/COVERAGE_AUDIT.csv](/home/meta_os/web_novel/docs/governance/COVERAGE_AUDIT.csv#L30) plus the updated gap note in [docs/governance/WEBNOVEL_QUALITY_MAP.md](/home/meta_os/web_novel/docs/governance/WEBNOVEL_QUALITY_MAP.md#L40).
+
+Files modified: `engine/quality_gate.py`, `engine/pipeline.py`, `config.yaml`, `tests/test_quality_gate.py`, `tests/test_top_tier_perception.py`, `docs/governance/COVERAGE_AUDIT.csv`, `docs/governance/WEBNOVEL_QUALITY_MAP.md`.
+
+**Validation Result**
+
+`pytest tests/test_quality_gate.py tests/test_top_tier_perception.py`  
+`python -m compileall engine/quality_gate.py engine/pipeline.py`  
+`python -c "import yaml; yaml.safe_load(open('config.yaml', 'r', encoding='utf-8'))['quality']"`
+
+All passed.
+
+**Remaining Risk**
+
+This bundle only hardens acceptance on payoff/world-state integrity. It still does not encode every desired quality axis in the gate, so character pressure, pacing degradation, and other reader-perceived failure modes can still rely too heavily on adjacent modules rather than direct acceptance thresholds.

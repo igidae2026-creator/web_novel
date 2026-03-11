@@ -1,0 +1,27 @@
+**Bottleneck**
+
+Projected candidate evaluation was scoring retention from stale pre-update state. That weakens stable enforcement of cliffhanger carryover, conflict heat, and fallout pressure during the rewrite/gate loop.
+
+**Change**
+
+I patched [`engine/pipeline.py`](/home/meta_os/web_novel/engine/pipeline.py) so `_project_episode_state(...)` rebuilds `retention_engine` after projected conflict/world/reward/pattern updates. This makes candidate scoring and gate decisions reflect the projected episode’s actual pressure, not the copied baseline state.
+
+I added a regression test in [`tests/test_quality_gate.py`](/home/meta_os/web_novel/tests/test_quality_gate.py) that proves:
+- baseline retention state is not mutated
+- projected state recalculates unresolved-thread pressure
+- projected state recalculates curiosity debt
+- projected state recalculates fallout pressure
+
+**Files Modified**
+
+- [`engine/pipeline.py`](/home/meta_os/web_novel/engine/pipeline.py)
+- [`tests/test_quality_gate.py`](/home/meta_os/web_novel/tests/test_quality_gate.py)
+
+**Validation Result**
+
+`pytest -q` passed: 70 passed.  
+`python -m compileall engine/pipeline.py tests/test_quality_gate.py` passed.
+
+**Remaining Risk**
+
+The gate still depends on externally scored `score_obj` values for several reader-quality axes. This patch improves retention-pressure fidelity inside candidate evaluation, but it does not yet add new gate coverage for broader long-run qualities like payoff resolution balance or repetition fatigue across multiple episodes.

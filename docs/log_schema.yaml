@@ -1,0 +1,26 @@
+version: v1_structural
+events_jsonl:
+  fields: [ts, type, payload]
+  preferred_types:
+    - ingest_material
+    - scope_evaluate
+    - promote_material
+    - reject_material
+    - defer_material
+    - generate_episode
+    - rewrite_episode
+    - episode_rejected
+    - certify_artifact
+    - pause_queue
+    - resume_queue
+    - recover_failed_track
+metrics_jsonl:
+  common_fields: [ts, episode, platform, genre_bucket, type(optional)]
+  certification_record:
+    type: certification
+    report: object
+  grade_record:
+    type: grade
+    grade: string
+    date: YYYY-MM-DD
+    top_percent: number

@@ -1,0 +1,54 @@
+boost_streak_limit: 3
+difficulty:
+  genre_bucket:
+    A: 1.0
+    B: 1.0
+    C: 1.0
+    D: 1.0
+    E: 1.0
+    F: 1.0
+    G: 1.0
+    H: 1.0
+    I: 1.0
+  platform:
+    Joara: 0.8
+    KakaoPage: 1.2
+    Munpia: 1.0
+    NaverSeries: 1.1
+    Novelpia: 0.9
+    Ridibooks: 1.0
+fat_tail_damp_factor: 0.9
+fat_tail_jump_threshold: 2.0
+force_stabilize_cooldown: 3
+inertia:
+  genre_hold_strength:
+    A: 0.7
+    B: 0.7
+    C: 0.7
+    D: 0.7
+    E: 0.7
+    F: 0.7
+    G: 0.7
+    H: 0.7
+    I: 0.7
+  hold_strength: 0.7
+  platform_factor:
+    Joara: 0.8
+    KakaoPage: 1.2
+    Munpia: 1.0
+    NaverSeries: 1.1
+    Novelpia: 0.9
+    Ridibooks: 1.0
+  platform_hold_strength:
+    Joara: 0.6
+    KakaoPage: 0.8
+    Munpia: 0.7
+    NaverSeries: 0.75
+    Novelpia: 0.65
+    Ridibooks: 0.7
+  rebound_damp_compression: 0.92
+  rebound_damp_hook: 0.9
+  rebound_damp_payoff: 0.9
+  rebound_jump_base: 1.5
+  rebound_risk: 0.4
+version: v1_structural

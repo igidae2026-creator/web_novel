@@ -1,0 +1,22 @@
+**Bottleneck**
+
+The highest-leverage false-positive path was prose friction: episodes could be structurally strong on hook/retention/conflict but still read like dense, repetitive wall-of-text prose, which directly hurts Korean web-novel readability.
+
+**Change**
+
+I added a lightweight prose-readability evaluator in [engine/prose_guard.py](/home/meta_os/web_novel/engine/prose_guard.py#L1), then wired it into the acceptance gate in [engine/quality_gate.py](/home/meta_os/web_novel/engine/quality_gate.py#L56) with a runtime threshold in [config.yaml](/home/meta_os/web_novel/config.yaml#L32). The pipeline now passes episode text into the gate and surfaces prose diagnostics to rewrite feedback in [engine/pipeline.py](/home/meta_os/web_novel/engine/pipeline.py#L455), and the rewrite prompt now tells the model how to repair `prose_readability` failures in [engine/prompts.py](/home/meta_os/web_novel/engine/prompts.py#L214).
+
+I added regression coverage showing readable prose passes and dense wall-of-text prose fails in [tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py#L1007), then updated the ledger in [docs/governance/COVERAGE_AUDIT.csv](/home/meta_os/web_novel/docs/governance/COVERAGE_AUDIT.csv#L36) and [docs/governance/WEBNOVEL_QUALITY_MAP.md](/home/meta_os/web_novel/docs/governance/WEBNOVEL_QUALITY_MAP.md#L35).
+
+Files modified: [engine/prose_guard.py](/home/meta_os/web_novel/engine/prose_guard.py), [engine/quality_gate.py](/home/meta_os/web_novel/engine/quality_gate.py), [engine/pipeline.py](/home/meta_os/web_novel/engine/pipeline.py), [engine/prompts.py](/home/meta_os/web_novel/engine/prompts.py), [config.yaml](/home/meta_os/web_novel/config.yaml), [tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py), [docs/governance/COVERAGE_AUDIT.csv](/home/meta_os/web_novel/docs/governance/COVERAGE_AUDIT.csv), [docs/governance/WEBNOVEL_QUALITY_MAP.md](/home/meta_os/web_novel/docs/governance/WEBNOVEL_QUALITY_MAP.md).
+
+**Validation**
+
+`pytest -q tests/test_quality_gate.py`  
+`pytest -q tests/test_top_tier_perception.py`
+
+Result: `15 passed` and `1 passed`.
+
+**Remaining Risk**
+
+This guard is heuristic. It reduces obvious readability failures, but it still judges prose through structural signals rather than full reader taste, so voice quality and line-level elegance can still slip through if the text is technically readable.

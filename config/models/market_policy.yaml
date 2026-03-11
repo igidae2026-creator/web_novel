@@ -1,0 +1,14 @@
+version: v1_structural
+modes:
+  ATTACK_TOP3:
+    target_band: TOP3
+    boost_allowed: true
+    slope_threshold: 0.0
+  DEFEND_TOP10:
+    target_band: TOP10
+    boost_allowed: false
+    slope_threshold: 0.2
+switch_rules:
+  to_defend_if_std_above: 1.5
+  to_defend_if_band_below: TOP10
+  to_attack_if_band_at_least: TOP5

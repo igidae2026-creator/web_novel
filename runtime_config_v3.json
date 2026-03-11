@@ -1,0 +1,16 @@
+{
+  "generation_enabled": true,
+  "track_count": 6,
+  "release_cadence": {
+    "mode": "queue_loop",
+    "steps_per_run": 1
+  },
+  "portfolio": {
+    "mode": "balanced"
+  },
+  "evaluation": {
+    "max_revision_passes": 2,
+    "causal_repair_retry_budget": 2,
+    "viral_required": true
+  }
+}

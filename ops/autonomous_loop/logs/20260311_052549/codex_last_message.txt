@@ -1,0 +1,16 @@
+**Improvement Bundle**
+
+Bottleneck was acceptance-state drift: `generate_episode()` evaluated quality, payoff integrity, and retention against stale pre-episode state, then mutated promise/market state afterward, including duplicate payoff/market updates. That weakens stable enforcement of cliffhanger/payoff/world-pressure quality.
+
+I changed the pipeline to project the current episode’s post-event state first, evaluate the candidate draft against that projected state, and then commit that state once for the final selected draft. I also updated reward serialization so it forwards the current `score_obj` and `cfg` into promise/payoff and market serialization, instead of using empty/default context. The key edits are in [engine/pipeline.py](/home/meta_os/web_novel/engine/pipeline.py) and [engine/reward_serialization.py](/home/meta_os/web_novel/engine/reward_serialization.py). I added a regression test in [tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py) to prove projected payoff/market state updates without mutating the baseline candidate state.
+
+Validation passed:
+- `pytest tests/test_quality_gate.py tests/test_absolute_ceiling_regression.py -q`
+- `python -m py_compile engine/pipeline.py engine/reward_serialization.py tests/test_quality_gate.py`
+
+Files modified:
+- [engine/pipeline.py](/home/meta_os/web_novel/engine/pipeline.py)
+- [engine/reward_serialization.py](/home/meta_os/web_novel/engine/reward_serialization.py)
+- [tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py)
+
+Remaining risk is that `generate_episode()` still has a large amount of inline orchestration, so state/evaluation ordering is now better but still concentrated in one function. The next bottleneck is likely extracting this evaluation/commit path into a smaller tested unit if you want to keep tightening stable production quality.

@@ -1,0 +1,13 @@
+# METAOS
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# outputs and backups can grow large; commit only if desired
+outputs/
+global_backups/
+backups/
+
+# secrets
+.env

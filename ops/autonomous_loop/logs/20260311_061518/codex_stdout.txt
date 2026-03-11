@@ -1,0 +1,19 @@
+**Bottleneck**
+
+The highest-leverage gap was in the repair path, not the gate itself. `engine/quality_gate.py` could already reject many serialization/coherence failures, but the rewrite prompt only gave targeted recovery instructions for a subset of those failure codes, which made retries depend too much on model luck.
+
+**Change**
+
+I replaced the partial hardcoded rewrite rules with a failure-code directive map in [engine/prompts.py](/home/meta_os/web_novel/engine/prompts.py#L6) and wired `episode_rewrite_json()` to emit the relevant repair instructions dynamically at [engine/prompts.py](/home/meta_os/web_novel/engine/prompts.py#L223). This now covers current gate failures like payoff integrity corruption, world instability, novelty drift, weak protagonist momentum, objective imbalance, weak cliffhangers, and cold threat proximity.
+
+I added a focused regression test in [tests/test_prompt_rewrite_feedback.py](/home/meta_os/web_novel/tests/test_prompt_rewrite_feedback.py#L1) to prove those previously uncovered failure codes now generate explicit rewrite guidance. I also recorded the coverage in [docs/governance/COVERAGE_AUDIT.csv](/home/meta_os/web_novel/docs/governance/COVERAGE_AUDIT.csv#L38) and updated the live gap note in [docs/governance/WEBNOVEL_QUALITY_MAP.md](/home/meta_os/web_novel/docs/governance/WEBNOVEL_QUALITY_MAP.md#L45).
+
+Files modified:
+- [engine/prompts.py](/home/meta_os/web_novel/engine/prompts.py#L1)
+- [tests/test_prompt_rewrite_feedback.py](/home/meta_os/web_novel/tests/test_prompt_rewrite_feedback.py#L1)
+- [docs/governance/COVERAGE_AUDIT.csv](/home/meta_os/web_novel/docs/governance/COVERAGE_AUDIT.csv#L38)
+- [docs/governance/WEBNOVEL_QUALITY_MAP.md](/home/meta_os/web_novel/docs/governance/WEBNOVEL_QUALITY_MAP.md#L45)
+
+Validation result: `pytest -q tests/test_prompt_rewrite_feedback.py tests/test_quality_gate.py` passed (`18 passed`), and `python -m py_compile engine/prompts.py` passed.
+
+Remaining risk: this closes the failure-code-to-repair mapping gap, but it does not guarantee the model will execute those directives strongly enough in generation. The next bottleneck is likely prompt-to-output compliance quality, not missing repair coverage.

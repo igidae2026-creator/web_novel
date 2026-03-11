@@ -1,0 +1,24 @@
+**Bottleneck**
+
+The highest-leverage gap was that the acceptance gate still relied on indirect retention proxies and did not directly reject weak episode endings. That left “addictive episode endings” under-protected despite being a primary product standard.
+
+**Change**
+
+I added a direct cliffhanger gate in [engine/quality_gate.py](/home/meta_os/web_novel/engine/quality_gate.py#L36), using `validate_cliffhanger(...)` plus a minimum carryover-pressure threshold. The runtime now passes the candidate cliffhanger text and plan into the gate in [engine/pipeline.py](/home/meta_os/web_novel/engine/pipeline.py#L455), and the default quality config now enables this guard in [config.yaml](/home/meta_os/web_novel/config.yaml#L32). I also added regression coverage for both pass and fail cases in [tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py#L6), and recorded the new coverage explicitly in [docs/governance/COVERAGE_AUDIT.csv](/home/meta_os/web_novel/docs/governance/COVERAGE_AUDIT.csv#L34) and [docs/governance/WEBNOVEL_QUALITY_MAP.md](/home/meta_os/web_novel/docs/governance/WEBNOVEL_QUALITY_MAP.md#L40).
+
+Files modified:
+- [engine/quality_gate.py](/home/meta_os/web_novel/engine/quality_gate.py)
+- [engine/pipeline.py](/home/meta_os/web_novel/engine/pipeline.py)
+- [config.yaml](/home/meta_os/web_novel/config.yaml)
+- [tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py)
+- [docs/governance/COVERAGE_AUDIT.csv](/home/meta_os/web_novel/docs/governance/COVERAGE_AUDIT.csv)
+- [docs/governance/WEBNOVEL_QUALITY_MAP.md](/home/meta_os/web_novel/docs/governance/WEBNOVEL_QUALITY_MAP.md)
+
+**Validation**
+
+`pytest -q tests/test_quality_gate.py tests/test_fun_cliffhanger_engine.py`: 13 passed  
+`pytest -q`: 77 passed
+
+**Remaining Risk**
+
+This closes the gate on structurally weak cliffhangers, but it still evaluates ending addiction through rule-based structure and pressure, not reader-language quality at the sentence level. A later bundle should target semantic differentiation between merely valid cliffhangers and genuinely high-conversion ones.

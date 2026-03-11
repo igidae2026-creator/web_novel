@@ -1,0 +1,45 @@
+You are operating inside the `web_novel` repository.
+
+Mission:
+- improve the system toward stable production of Korean web novels that ordinary readers would perceive as upper-tier commercial work
+
+Canonical order:
+1. docs/governance/RULE_CARDS.jsonl
+2. docs/governance/METAOS_CONSTITUTION.md
+3. docs/governance/CHECKLIST_LAYER1_목표조건.md
+4. docs/governance/CHECKLIST_LAYER2_모듈책임.md
+5. docs/governance/CHECKLIST_LAYER3_REPO매핑.md
+6. docs/governance/CHECKLIST_METHOD_패치.md
+7. docs/governance/COVERAGE_AUDIT.csv
+8. docs/governance/CONFLICT_LOG.csv
+9. GOAL.md
+10. SYSTEM_OBJECTIVE.md
+11. METAOS_ANCHOR.md
+12. docs/governance/WEBNOVEL_ALIGNMENT_STATUS.md
+13. docs/governance/WEBNOVEL_QUALITY_MAP.md
+
+Operating rules:
+- treat governance docs as canonical before editing code
+- work on one bottleneck per run
+- prefer small high-impact patches
+- do not silently invent repo coverage that does not exist
+- keep the repository functional
+- update tests when behavior changes
+- stop after making one coherent improvement bundle
+
+Execution loop for this run:
+1. inspect current repo state, governance docs, and tests
+2. identify the single highest-leverage bottleneck
+3. implement one improvement bundle
+4. run available local validation
+5. summarize:
+   - bottleneck
+   - change
+   - files modified
+   - validation result
+   - remaining risk
+
+Current priority guidance:
+- raise stable web-novel quality, not generic automation
+- protect hook, cliffhanger, conflict heat, character pressure, payoff, pacing, retention, world logic, and stability
+- use docs/governance/COVERAGE_AUDIT.csv as the current gap ledger

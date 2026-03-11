@@ -1,0 +1,35 @@
+**Bottleneck**
+
+The highest-leverage gap was serialization monotony. The repo already tracked `pattern_memory` and portfolio novelty pressure, but the acceptance gate did not directly reject episodes that looked good on surface metrics while repeating overused beats and accumulating novelty debt.
+
+**Change**
+
+I added a direct novelty/anti-repetition gate in [engine/quality_gate.py](/home/meta_os/web_novel/engine/quality_gate.py) for:
+- `pattern_overused_events_max`
+- `pattern_crowding_max`
+- `novelty_debt_max`
+- `novelty_guard_min`
+
+I wired default thresholds in [config.yaml](/home/meta_os/web_novel/config.yaml) and added coverage in [tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py) for both healthy serialization state and failure on crowded/repetitive pattern state. I also updated the audit/docs in [docs/governance/COVERAGE_AUDIT.csv](/home/meta_os/web_novel/docs/governance/COVERAGE_AUDIT.csv) and [docs/governance/WEBNOVEL_QUALITY_MAP.md](/home/meta_os/web_novel/docs/governance/WEBNOVEL_QUALITY_MAP.md).
+
+This bundle ties directly to quality targets `retention`, `pacing`, and `stable long-run freshness`, and to the repo-mapped Semantic Validation Module.
+
+**Validation**
+
+`pytest -q tests/test_quality_gate.py`  
+`8 passed in 0.08s`
+
+`pytest -q tests/test_top_tier_perception.py`  
+`1 passed in 0.02s`
+
+**Files Modified**
+
+[engine/quality_gate.py](/home/meta_os/web_novel/engine/quality_gate.py)  
+[config.yaml](/home/meta_os/web_novel/config.yaml)  
+[tests/test_quality_gate.py](/home/meta_os/web_novel/tests/test_quality_gate.py)  
+[docs/governance/COVERAGE_AUDIT.csv](/home/meta_os/web_novel/docs/governance/COVERAGE_AUDIT.csv)  
+[docs/governance/WEBNOVEL_QUALITY_MAP.md](/home/meta_os/web_novel/docs/governance/WEBNOVEL_QUALITY_MAP.md)
+
+**Remaining Risk**
+
+This gate now blocks repeated-beat drift when the projected state already reflects it, but it still depends on upstream event classification being informative. If event typing is too coarse, some tonal or structural repetition can still slip through under different event labels.

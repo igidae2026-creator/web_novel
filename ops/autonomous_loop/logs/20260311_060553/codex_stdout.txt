@@ -1,0 +1,7 @@
+**Summary**
+
+- Bottleneck: the pipeline evaluated the quality gate but still wrote `episode_*.txt` after a failed gate, which breaks the governance requirement that failed acceptance must not commit.
+- Change: added an explicit rejection path in [engine/pipeline.py](/home/meta_os/web_novel/engine/pipeline.py#L50) and [engine/pipeline.py](/home/meta_os/web_novel/engine/pipeline.py#L560) that logs an append-only `episode_rejected` event to `metrics.jsonl` and raises `EpisodeRejectedError` instead of writing the episode artifact. The UI and queue runner now surface that rejection instead of reporting success in [app.py](/home/meta_os/web_novel/app.py#L14), [app.py](/home/meta_os/web_novel/app.py#L249), and [engine/track_runner.py](/home/meta_os/web_novel/engine/track_runner.py#L10).
+- Files modified: [engine/pipeline.py](/home/meta_os/web_novel/engine/pipeline.py), [app.py](/home/meta_os/web_novel/app.py), [engine/track_runner.py](/home/meta_os/web_novel/engine/track_runner.py), [tests/test_pipeline_acceptance.py](/home/meta_os/web_novel/tests/test_pipeline_acceptance.py#L1).
+- Validation result: `pytest -q tests/test_pipeline_acceptance.py`, `pytest -q tests/test_quality_gate.py`, and `pytest -q tests/test_top_tier_perception.py` all passed.
+- Remaining risk: the regression guard in the current pipeline path is still observational rather than a safe hard blocker, because its baseline comparison is not yet trustworthy enough to enforce commit rejection without false negatives.
