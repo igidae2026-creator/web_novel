@@ -79,6 +79,7 @@ Until Layer 3 is rewritten through the patch method for this repository, use the
 - supervisor snapshots and the runtime UI now expose hidden reader-risk trend and its priority directly, so operators can audit why the loop is blocked without reverse-engineering the full final-threshold artifact
 - adapter material/artifact normalization now carries hidden reader-risk trend into policy metadata by default, so conformance, admission, and promotion paths cannot silently drop long-run fatigue risk when handing objects across subsystem boundaries
 - runtime dashboard helpers now summarize hidden reader-risk trend across tracks, so portfolio-level fatigue pressure is visible without opening each final-threshold artifact one by one
+- `system_status.json` snapshots now also carry hidden reader-risk summary, so unattended runtime audits can inspect long-run fatigue pressure from a single typed snapshot instead of depending on the UI
 
 ## Conservative Completion Estimate
 

@@ -186,6 +186,7 @@ def write_system_status_snapshot(
     runtime_cfg: Dict[str, Any] | None = None,
     path: str = DEFAULT_SYSTEM_STATUS_PATH,
     out_dir: str | None = None,
+    tracks_root: str = os.path.join("domains", "webnovel", "tracks"),
     safe_mode: bool = False,
     project_dir_for_backup: str | None = None,
 ) -> Dict[str, Any]:
@@ -193,6 +194,7 @@ def write_system_status_snapshot(
         "updated_at": datetime.now().isoformat(timespec="seconds"),
         "system_status": dict(system_status or {}),
         "runtime_config": dict(runtime_cfg or load_runtime_config()),
+        "hidden_reader_risk_summary": summarize_hidden_reader_risk(tracks_root=tracks_root),
     }
     text = json.dumps(payload, ensure_ascii=False, indent=2)
     _ensure_parent_dir(path)

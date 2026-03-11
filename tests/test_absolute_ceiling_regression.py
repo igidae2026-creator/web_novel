@@ -1309,14 +1309,33 @@ def test_system_status_snapshot_writes_global_and_local_outputs():
     with tempfile.TemporaryDirectory() as tmpdir:
         global_path = os.path.join(tmpdir, "outputs", "system_status.json")
         local_out_dir = os.path.join(tmpdir, "tracks", "alpha", "outputs")
+        final_path = os.path.join(local_out_dir, "final_threshold_eval.json")
+        os.makedirs(local_out_dir, exist_ok=True)
+        with open(final_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "criteria": {
+                        "autonomous_convergence_trend": {
+                            "details": {
+                                "hidden_reader_risk_trend": 0.38,
+                            }
+                        }
+                    }
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
         payload = write_system_status_snapshot(
             {"iteration_state": "running", "balanced_total_history": [0.82, 0.83]},
             runtime_cfg={"generation_enabled": True, "track_count": 3},
             path=global_path,
             out_dir=local_out_dir,
+            tracks_root=os.path.join(tmpdir, "tracks"),
         )
 
         assert payload["system_status"]["iteration_state"] == "running"
+        assert payload["hidden_reader_risk_summary"]["critical_tracks"] == 1
         assert os.path.exists(global_path)
         assert os.path.exists(os.path.join(local_out_dir, "system_status.json"))
 
