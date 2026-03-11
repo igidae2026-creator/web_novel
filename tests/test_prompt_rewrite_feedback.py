@@ -88,3 +88,44 @@ def test_master_outline_prompt_includes_design_guardrails_for_hidden_reader_risk
     assert "얇은 장면 연결과 말뿐인 긴장 유발 패턴을 금지한다" in prompt
     assert "패턴 메모리" in prompt
     assert "설계 금지/회피 규칙 3개" in prompt
+
+
+def test_master_outline_prompt_includes_platform_soak_directives():
+    prompt = PROMPTS.master_outline(
+        _cfg(),
+        ext_snapshot={},
+        sub_engine_key="AUTO",
+        story_state={
+            "portfolio": {
+                "design_guardrails": ["테스트 가드레일"],
+                "platform_soak_pressure": 0.36,
+                "platform_soak_summary": {"dominant_mode": "volatile"},
+            },
+            "pattern_memory": {},
+        },
+    )
+
+    assert "플랫폼 soak 압력 지시" in prompt
+    assert "플랫폼 스트레스가 강하므로" in prompt
+    assert "volatile" not in prompt
+
+
+def test_episode_plan_prompt_includes_platform_soak_directives():
+    prompt = PROMPTS.episode_plan(
+        _cfg(),
+        outline="배신 이후 제국을 되찾는 복수극",
+        ep=4,
+        knobs={"hook_intensity": 0.8},
+        ext_snapshot={},
+        fatigue_directive="반복 줄이기",
+        sub_engine_key="AUTO",
+        story_state={
+            "portfolio": {
+                "platform_soak_pressure": 0.34,
+                "platform_soak_summary": {"dominant_mode": "volatile"},
+            }
+        },
+    )
+
+    assert "플랫폼 soak 압력 지시" in prompt
+    assert "초반 5화 안의 payoff 간격" in prompt

@@ -120,6 +120,25 @@ def _arc_pressure_directives(story_state: dict | None) -> str:
     return "\n".join(directives)
 
 
+def _platform_soak_directives(story_state: dict | None) -> str:
+    payload = dict(story_state or {})
+    portfolio = dict(payload.get("portfolio", {}) or {})
+    platform_soak_pressure = float(portfolio.get("platform_soak_pressure", 0.0) or 0.0)
+    platform_soak_summary = dict(portfolio.get("platform_soak_summary", {}) or {})
+    directives: list[str] = []
+
+    if platform_soak_pressure >= 0.22:
+        directives.append("- 최근 플랫폼 soak 압력이 높은 버킷이므로 초반 5화 안의 payoff 간격을 더 촘촘히 두고, 설명보다 사건 도착 속도를 앞당길 것")
+    if platform_soak_pressure >= 0.34:
+        directives.append("- 플랫폼 스트레스가 강하므로 얇은 연결 장면을 줄이고 손실, 위상 변화, 관계 반작용을 한 회차 안에서 더 또렷하게 발생시킬 것")
+    if str(platform_soak_summary.get("dominant_mode") or "") == "volatile":
+        directives.append("- 최근 long-run 양상이 불안정했으므로 회차 말미 훅만 키우지 말고 부분 회수와 후속 대가를 함께 남겨 장기 피로를 낮출 것")
+
+    if not directives:
+        return "- 플랫폼 cadence 압력과 상위독자 체감 압력을 동시에 만족하도록 초반 payoff 간격과 사건 압축을 균형 있게 유지할 것"
+    return "\n".join(directives)
+
+
 class PROMPTS:
     @staticmethod
     def master_outline(cfg: dict, ext_snapshot: dict, sub_engine_key: str, story_state: dict | None = None) -> str:
@@ -159,6 +178,9 @@ class PROMPTS:
 
 포트폴리오 설계 가드레일:
 {design_guardrails}
+
+플랫폼 soak 압력 지시:
+{_platform_soak_directives(story_state)}
 
 패턴 메모리:
 {pattern}
@@ -247,6 +269,8 @@ class PROMPTS:
 {_reader_pressure_directives(story_state)}
 - 장기 아크 압력 지시:
 {_arc_pressure_directives(story_state)}
+- 플랫폼 soak 압력 지시:
+{_platform_soak_directives(story_state)}
 """
 
     @staticmethod

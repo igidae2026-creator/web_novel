@@ -155,6 +155,16 @@ def update_portfolio_memory(
     boost_ready = int(runtime_snapshot.get("boost_ready_tracks", 0) or 0)
     stable_tracks = int(runtime_snapshot.get("stable_tracks", 0) or 0)
     mean_runtime_score = float(runtime_snapshot.get("mean_portfolio_score", 0.0) or 0.0)
+    current_platform_soak_pressure = 0.0
+    current_platform_soak_summary: Dict[str, Any] = {}
+    for item in list(runtime_snapshot.get("tracks", []) or []):
+        item_signature = f"{item.get('platform', 'unknown')}::{item.get('bucket', 'X')}"
+        if item_signature == signature:
+            current_platform_soak_pressure = _as_float(item.get("platform_soak_pressure"), 0.0)
+            current_platform_soak_summary = dict(item.get("platform_soak_summary") or {})
+            break
+    memory["platform_soak_pressure"] = round(current_platform_soak_pressure, 4)
+    memory["platform_soak_summary"] = current_platform_soak_summary
     if boost_ready or stable_tracks:
         memory["portfolio_fit"] = _clamp(memory["portfolio_fit"] + min(3, boost_ready + int(mean_runtime_score >= 0.65)))
         memory["coordination_health"] = _clamp(memory["coordination_health"] + min(3, stable_tracks + int(boost_ready >= 2)))
@@ -205,6 +215,9 @@ def update_portfolio_memory(
         memory["portfolio_fit"] = _clamp(memory["portfolio_fit"] - 1)
         memory["coordination_health"] = _clamp(memory["coordination_health"] - 1)
         memory["release_guard"] = _clamp(memory["release_guard"] - 1)
+    if current_platform_soak_pressure >= 0.22:
+        memory["portfolio_fit"] = _clamp(memory["portfolio_fit"] - 1)
+        memory["cadence_guard"] = _clamp(memory["cadence_guard"] - 1)
     if hidden_reader_risk >= 0.5:
         memory["cadence_guard"] = _clamp(memory["cadence_guard"] - 1)
         memory["novelty_guard"] = _clamp(memory["novelty_guard"] - 1)
@@ -239,6 +252,8 @@ def update_portfolio_memory(
         directives.append("얇음, 기시감, 가짜 긴장감이 누적되고 있으므로 변주와 실제 대가를 우선 회복한다")
     if hidden_reader_risk >= 0.7:
         directives.append("장기 hidden reader-risk 추세가 높으므로 가속 배치보다 홀드와 재배치를 우선한다")
+    if current_platform_soak_pressure >= 0.22:
+        directives.append("플랫폼 soak 압력이 높으므로 연재 cadence를 무리하게 당기지 말고 초반 payoff 간격과 훅 밀도를 함께 재설계한다")
     if interference_pressure >= 4:
         directives.append("교차 트랙 릴리스 간섭을 낮추기 위해 강한 트랙은 선행 배치하고 나머지는 간격을 둔다")
     directives.extend([str(item) for item in list(release_snapshot.get("policy_directives", []) or [])[:2]])
@@ -255,6 +270,8 @@ def update_portfolio_memory(
         design_guardrails.append("최근과 유사한 갈등 구조, 후킹 어법, 회차 말단 처리 방식을 반복하지 말고 보상 구조 자체를 바꾼다")
     if hidden_reader_risk >= 0.7:
         design_guardrails.append("장기 피로 추세가 낮아질 때까지 연재 cadence를 무리하게 올리지 말고 release 간격과 payoff 밀도를 다시 설계한다")
+    if current_platform_soak_pressure >= 0.22:
+        design_guardrails.append("플랫폼 soak 압력이 높은 버킷이므로 초반 5화 안에 손실, 회수, 위상 변화를 더 촘촘히 배치한다")
     if memory["novelty_guard"] <= 4:
         design_guardrails.append("기획 단계에서 익숙한 장식 변형이 아니라 판세를 바꾸는 새 정보, 새 비용, 새 관계 축을 먼저 설계한다")
     if memory["cadence_guard"] <= 4:
@@ -298,5 +315,7 @@ def portfolio_prompt_payload(state: Dict[str, Any]) -> Dict[str, Any]:
         "runtime_outcome_memory": memory.get("runtime_outcome_memory", {}),
         "episode_attribution_memory": memory.get("episode_attribution_memory", {}),
         "hidden_reader_risk": memory.get("hidden_reader_risk", 0.0),
+        "platform_soak_pressure": memory.get("platform_soak_pressure", 0.0),
+        "platform_soak_summary": memory.get("platform_soak_summary", {}),
         "portfolio_metrics": story_state.get("portfolio_metrics", {}),
     }
