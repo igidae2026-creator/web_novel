@@ -4,6 +4,7 @@ from typing import Any, Dict, Iterable, List
 
 from .regression_guard import PROTECTED_AXES, evaluate_total_profile
 from .story_state import ensure_story_state, sync_story_state
+from .strategy import PLATFORM_STRATEGY
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -13,6 +14,19 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
 def _mean(values: Iterable[float]) -> float:
     values = list(values)
     return 0.0 if not values else sum(values) / len(values)
+
+
+def _platform_soak_profile(platform: str | None) -> Dict[str, float]:
+    name = str(platform or "DEFAULT")
+    profile = dict(PLATFORM_STRATEGY.get(name, {}) or {})
+    pacing = str(profile.get("pacing") or "balanced")
+    if pacing == "aggressive":
+        return {"cycle_penalty": 1.18, "signal_penalty": 1.15, "repair_bonus": 0.0}
+    if pacing == "spiky":
+        return {"cycle_penalty": 1.24, "signal_penalty": 1.2, "repair_bonus": -0.01}
+    if pacing == "character":
+        return {"cycle_penalty": 0.94, "signal_penalty": 0.9, "repair_bonus": 0.01}
+    return {"cycle_penalty": 1.0, "signal_penalty": 1.0, "repair_bonus": 0.0}
 
 
 def _heavy_reader_signal(objective_scores: Dict[str, Any], story_state: Dict[str, Any] | None = None) -> float:
@@ -182,6 +196,7 @@ def simulate_long_run(
     objective_scores: Dict[str, Any],
     story_state: Dict[str, Any],
     horizons: Iterable[int] = (30, 60, 120),
+    platform: str | None = None,
 ) -> Dict[str, Any]:
     base_profile = evaluate_total_profile(objective_scores)
     portfolio_memory = dict((story_state or {}).get("portfolio_memory", {}) or {})
@@ -193,6 +208,7 @@ def simulate_long_run(
     payoff_integrity = float(promise_graph.get("payoff_integrity", 0.5) or 0.5)
     closure_score = float(repair.get("closure_score", 0.5) or 0.5)
     heavy_reader_baseline = _heavy_reader_signal(objective_scores, story_state)
+    platform_profile = _platform_soak_profile(platform)
     for horizon in horizons:
         history: List[float] = []
         repair_rate_history: List[float] = []
@@ -205,15 +221,21 @@ def simulate_long_run(
                 + (coordination_health / 10.0) * 0.012
                 + payoff_integrity * 0.01
                 + closure_score * 0.008
-                - cycle * 0.018
+                + float(platform_profile.get("repair_bonus", 0.0) or 0.0)
+                - cycle * 0.018 * float(platform_profile.get("cycle_penalty", 1.0) or 1.0)
             )
-            repair_rate = _clamp(0.76 + closure_score * 0.12 - cycle * 0.08)
+            repair_rate = _clamp(
+                0.76
+                + closure_score * 0.12
+                + float(platform_profile.get("repair_bonus", 0.0) or 0.0)
+                - cycle * 0.08 * float(platform_profile.get("cycle_penalty", 1.0) or 1.0)
+            )
             heavy_reader_signal = _clamp(
                 heavy_reader_baseline
                 + (release_guard / 10.0) * 0.02
                 + (coordination_health / 10.0) * 0.016
                 + payoff_integrity * 0.01
-                - cycle * 0.02
+                - cycle * 0.02 * float(platform_profile.get("signal_penalty", 1.0) or 1.0)
             )
             history.append(round(quality, 4))
             repair_rate_history.append(round(repair_rate, 4))
@@ -236,6 +258,8 @@ def simulate_long_run(
     return {
         "baseline_balanced_total": round(base_profile["balanced_total"], 4),
         "baseline_heavy_reader_signal": round(heavy_reader_baseline, 4),
+        "platform": str(platform or "DEFAULT"),
+        "platform_profile": platform_profile,
         "runs": simulation_runs,
     }
 

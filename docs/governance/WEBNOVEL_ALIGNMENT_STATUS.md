@@ -95,6 +95,7 @@ Until Layer 3 is rewritten through the patch method for this repository, use the
 - adapter normalization, certification guidance, and new-track bootstrap now also carry heavy-reader signal trend, so weak upper-tier reader pressure is not dropped when artifacts cross subsystem boundaries or when new track defaults are chosen
 - final-threshold history, supervisor snapshots, and append-only final-threshold/supervisor events now also persist heavy-reader signal trend and priority, so long-run convergence audits can replay not just fatigue risk but upper-tier reader-pressure weakness itself
 - queue history, queue-state bundle budgeting, and system-status snapshots now also surface heavy-reader signal summaries, so runtime operators can see weak upper-tier reader pressure directly from queue/system surfaces without reopening per-track artifacts
+- long-run soak simulation is now platform-aware, so unattended convergence evidence reflects Munpia/KakaoPage-style aggressive serialization pressure versus character-driven platforms instead of treating all runtime stress as identical
 
 ## Conservative Completion Estimate
 

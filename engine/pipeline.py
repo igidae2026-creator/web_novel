@@ -1017,7 +1017,11 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         safe_mode=bool(cfg.get("safe_mode", False)),
         project_dir_for_backup=out_dir,
     )
-    simulation = simulate_long_run(objective_scores, state.data.get("story_state_v2", {}))
+    simulation = simulate_long_run(
+        objective_scores,
+        state.data.get("story_state_v2", {}),
+        platform=pj.get("platform"),
+    )
     soak_report = summarize_soak_report(simulation)
     human_quality_lift = estimate_human_quality_lift(
         objective_scores=objective_scores,

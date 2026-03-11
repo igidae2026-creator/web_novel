@@ -1285,6 +1285,7 @@ def test_long_run_simulation_reports_30_60_120_episode_runs():
             "stability": 0.84,
         },
         story_state,
+        platform="Munpia",
     )
 
     assert set(result["runs"].keys()) == {"30", "60", "120"}
@@ -1292,6 +1293,38 @@ def test_long_run_simulation_reports_30_60_120_episode_runs():
     assert result["runs"]["30"]["mean_balanced_total"] > 0.0
     assert result["runs"]["30"]["heavy_reader_signal_mean"] > 0.0
     assert result["runs"]["30"]["heavy_reader_signal_floor"] > 0.0
+    assert result["platform"] == "Munpia"
+    assert result["platform_profile"]["cycle_penalty"] > 1.0
+
+
+def test_long_run_simulation_reflects_platform_stress_bias():
+    state = {}
+    ensure_story_state(state)
+    story_state = state["story_state_v2"]
+    story_state["portfolio_memory"]["release_guard"] = 7
+    story_state["portfolio_memory"]["coordination_health"] = 7
+    story_state["promise_graph"]["payoff_integrity"] = 0.82
+    story_state["control"]["causal_repair"]["closure_score"] = 0.78
+    objective_scores = {
+        "fun": 0.76,
+        "coherence": 0.84,
+        "character_persuasiveness": 0.82,
+        "pacing": 0.81,
+        "retention": 0.83,
+        "emotional_immersion": 0.79,
+        "information_design": 0.78,
+        "emotional_payoff": 0.8,
+        "long_run_sustainability": 0.82,
+        "world_logic": 0.81,
+        "chemistry": 0.77,
+        "stability": 0.84,
+    }
+
+    munpia = simulate_long_run(objective_scores, story_state, platform="Munpia")
+    ridi = simulate_long_run(objective_scores, story_state, platform="Ridibooks")
+
+    assert munpia["runs"]["60"]["heavy_reader_signal_floor"] < ridi["runs"]["60"]["heavy_reader_signal_floor"]
+    assert munpia["runs"]["60"]["repair_rate_mean"] <= ridi["runs"]["60"]["repair_rate_mean"]
 
 
 def test_system_status_records_iteration_history_and_portfolio_signals():
