@@ -522,6 +522,25 @@ def test_portfolio_memory_penalizes_hidden_reader_risk():
     assert payload["design_guardrails"]
 
 
+def test_portfolio_memory_penalizes_hidden_reader_risk_trend_from_threshold_history():
+    state = {}
+    cfg = {"project": {"platform": "Munpia", "genre_bucket": "B"}}
+    ensure_story_state(state, cfg=cfg)
+    state["story_state_v2"]["control"]["final_threshold_history"]["hidden_reader_risk_trend"] = 0.71
+
+    memory = update_portfolio_memory(
+        state,
+        cfg=cfg,
+        event_plan={"type": "arrival"},
+        portfolio_snapshot=[{"winning_pattern": "arrival", "heat": 8}],
+    )
+
+    assert memory["hidden_reader_risk"] >= 0.71
+    assert memory["release_strategy"] == "staggered"
+    assert any("홀드와 재배치" in directive for directive in memory["policy_directives"])
+    assert any("release 간격" in directive for directive in memory["design_guardrails"])
+
+
 def test_portfolio_memory_learns_from_real_metrics_logs():
     with tempfile.TemporaryDirectory() as tmpdir:
         tracks_root = os.path.join(tmpdir, "tracks")
@@ -754,6 +773,44 @@ def test_cross_track_release_scheduler_staggers_platform_overlap():
         assert actions["track_c"] == "hold"
         assert plan["interference_pressure"] >= 4
         assert memory["release_strategy"] == "staggered"
+
+
+def test_cross_track_release_holds_when_hidden_reader_risk_trend_is_high():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        tdir = os.path.join(tracks_root, "track_risk")
+        os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+        with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+            json.dump({"project": {"platform": "Munpia", "genre_bucket": "B"}}, f)
+        with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+            for _ in range(3):
+                f.write(json.dumps({
+                    "retention": {"predicted_next_episode": 0.81},
+                    "scores": {"repetition_score": 0.09},
+                    "episode_attribution": {"fatigue_signal": 0.08, "retention_signal": 0.82, "payoff_signal": 0.78},
+                }) + "\n")
+        with open(os.path.join(tdir, "outputs", "final_threshold_eval.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "criteria": {
+                        "autonomous_convergence_trend": {
+                            "details": {
+                                "hidden_reader_risk_trend": 0.44,
+                            }
+                        }
+                    }
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        plan = build_cross_track_release_plan(tracks_root)
+
+        assert plan["release_plan"][0]["action"] == "hold"
+        assert plan["release_plan"][0]["hidden_reader_risk"] >= 0.44
+        assert any("얇음/반복 피로 추세" in directive for directive in plan["policy_directives"])
 
 
 def test_platform_release_policy_respects_slot_pressure():

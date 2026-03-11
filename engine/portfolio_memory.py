@@ -191,6 +191,7 @@ def update_portfolio_memory(
     memory["runtime_outcome_memory"] = runtime_outcomes
     memory["episode_attribution_memory"] = episode_attribution_memory
     reader_quality = dict((story_state.get("control", {}) or {}).get("reader_quality", {}) or {})
+    threshold_history = dict((story_state.get("control", {}) or {}).get("final_threshold_history", {}) or {})
     hidden_reader_risk = (
         _as_float(reader_quality.get("thinness_debt"), 0.0)
         + _as_float(reader_quality.get("repetition_debt"), 0.0)
@@ -198,6 +199,7 @@ def update_portfolio_memory(
         + _as_float(reader_quality.get("fake_urgency_debt"), 0.0)
         + _as_float(reader_quality.get("compression_debt"), 0.0)
     )
+    hidden_reader_risk += _as_float(threshold_history.get("hidden_reader_risk_trend"), 0.0)
     memory["hidden_reader_risk"] = round(hidden_reader_risk, 4)
     if hidden_reader_risk >= 0.35:
         memory["portfolio_fit"] = _clamp(memory["portfolio_fit"] - 1)
@@ -206,6 +208,9 @@ def update_portfolio_memory(
     if hidden_reader_risk >= 0.5:
         memory["cadence_guard"] = _clamp(memory["cadence_guard"] - 1)
         memory["novelty_guard"] = _clamp(memory["novelty_guard"] - 1)
+    if hidden_reader_risk >= 0.7:
+        memory["release_guard"] = _clamp(memory["release_guard"] - 1)
+        memory["release_strategy"] = "staggered"
     release_plan = list(release_snapshot.get("release_plan", []) or [])
     interference_pressure = int(release_snapshot.get("interference_pressure", 0) or 0)
     hold_tracks = sum(1 for item in release_plan if item.get("action") == "hold")
@@ -219,6 +224,8 @@ def update_portfolio_memory(
     memory["platform_slot_pressure"] = max(slot_pressure.values()) if slot_pressure else 0
     memory["release_guard"] = _clamp(memory["release_guard"] + int(accelerate_tracks >= 1) - int(hold_tracks >= 2) - int(memory["long_horizon_pressure"] >= 3))
     memory["shared_risk_alert"] = _clamp(memory["shared_risk_alert"] + int(interference_pressure >= 6))
+    if hidden_reader_risk >= 0.7:
+        memory["release_strategy"] = "staggered"
     directives: List[str] = []
     if crowding >= 6 or novelty_debt >= 6:
         directives.append("과밀 이벤트 패턴을 피하고 변주 또는 대체 보상 구조를 선택한다")
@@ -230,6 +237,8 @@ def update_portfolio_memory(
         directives.append("동일 시장 포지션과 출시 타이밍 충돌을 피하도록 차별적 훅과 관계 구도를 강조한다")
     if hidden_reader_risk >= 0.35:
         directives.append("얇음, 기시감, 가짜 긴장감이 누적되고 있으므로 변주와 실제 대가를 우선 회복한다")
+    if hidden_reader_risk >= 0.7:
+        directives.append("장기 hidden reader-risk 추세가 높으므로 가속 배치보다 홀드와 재배치를 우선한다")
     if interference_pressure >= 4:
         directives.append("교차 트랙 릴리스 간섭을 낮추기 위해 강한 트랙은 선행 배치하고 나머지는 간격을 둔다")
     directives.extend([str(item) for item in list(release_snapshot.get("policy_directives", []) or [])[:2]])
@@ -244,6 +253,8 @@ def update_portfolio_memory(
         design_guardrails.append("새 아크와 새 작품 기획에서 얇은 장면 연결과 말뿐인 긴장 유발 패턴을 금지한다")
     if hidden_reader_risk >= 0.45:
         design_guardrails.append("최근과 유사한 갈등 구조, 후킹 어법, 회차 말단 처리 방식을 반복하지 말고 보상 구조 자체를 바꾼다")
+    if hidden_reader_risk >= 0.7:
+        design_guardrails.append("장기 피로 추세가 낮아질 때까지 연재 cadence를 무리하게 올리지 말고 release 간격과 payoff 밀도를 다시 설계한다")
     if memory["novelty_guard"] <= 4:
         design_guardrails.append("기획 단계에서 익숙한 장식 변형이 아니라 판세를 바꾸는 새 정보, 새 비용, 새 관계 축을 먼저 설계한다")
     if memory["cadence_guard"] <= 4:

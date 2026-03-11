@@ -73,6 +73,7 @@ Until Layer 3 is rewritten through the patch method for this repository, use the
 - soak-history accumulation now records `hidden_reader_risk_trend`, so long unattended runs cannot count as convergence if they stay steady while thinness/repetition/deja-vu/fake-urgency/compression debt remains structurally high
 - `autonomous_convergence_trend` now requires both low human-lift and low hidden reader-risk trend, so "quietly repetitive but operationally stable" output no longer qualifies as conservative-100 progress
 - portfolio runtime scoring and new-track bootstrap now also consume hidden reader-risk trend, so long-run repetitive pressure can suppress boost-readiness and harden first-pass design guardrails even when the latest episode slice looks temporarily healthy
+- cross-track release planning and portfolio memory now also treat high hidden reader-risk trend as a cadence-control signal, so tracks with long-run thinness/repetition pressure are automatically pushed toward `hold`/`stagger` instead of being accelerated into more reader fatigue
 
 ## Conservative Completion Estimate
 
