@@ -57,3 +57,33 @@ def test_generate_tracks_bootstraps_subengine_from_hidden_reader_risk_profile(tm
     assert track_json["bootstrap_strategy"]["hidden_reader_risk"] >= 0.7
     assert track_json["project"]["bootstrap_heavy_reader_signal_trend"] == 0.57
     assert created[0]["heavy_reader_signal_trend"] == 0.57
+
+
+def test_generate_tracks_bootstraps_platform_soak_pressure_into_strategy(tmp_path):
+    tracks_root = tmp_path / "tracks"
+    existing_dir = tracks_root / "legacy_munpia_b"
+    _write_json(
+        existing_dir / "track.json",
+        {"project": {"name": "existing", "platform": "Munpia", "genre_bucket": "B", "sub_engine": "B_CLASSIC_MURIM"}},
+    )
+    os.makedirs(existing_dir / "outputs", exist_ok=True)
+    with open(existing_dir / "outputs" / "metrics.jsonl", "w", encoding="utf-8") as handle:
+        for _ in range(3):
+            handle.write(json.dumps({
+                "soak_report": {
+                    "tested": True,
+                    "steady_noop_ratio": 0.56,
+                    "dominant_mode": "volatile",
+                    "repair_rate_mean": 0.67,
+                    "heavy_reader_signal_floor_mean": 0.52,
+                }
+            }, ensure_ascii=False) + "\n")
+    _write_json(existing_dir / "outputs" / "final_threshold_eval.json", {"criteria": {}})
+
+    created = generate_tracks(str(tmp_path), "bootstrap-project", platforms=["Munpia"], buckets=["B"])
+
+    track_json = json.load(open(tracks_root / "munpia_b" / "track.json", "r", encoding="utf-8"))
+    assert created[0]["platform_soak_pressure"] >= 0.34
+    assert track_json["project"]["bootstrap_platform_soak_pressure"] >= 0.34
+    assert track_json["bootstrap_strategy"]["platform_soak_pressure"] >= 0.34
+    assert any("cadence 압력" in item for item in track_json["project"]["bootstrap_design_guardrails"])

@@ -70,6 +70,48 @@ def _heavy_reader_signal_profile(tracks_dir: str) -> Dict[str, float]:
         profile.setdefault(key, []).append(round(signal, 4))
     return {key: round(sum(values) / len(values), 4) for key, values in profile.items() if values}
 
+
+def _platform_soak_profile(tracks_dir: str) -> Dict[str, float]:
+    profile: Dict[str, list[float]] = {}
+    if not os.path.exists(tracks_dir):
+        return {}
+    for name in os.listdir(tracks_dir):
+        track_dir = os.path.join(tracks_dir, name)
+        track_json = os.path.join(track_dir, "track.json")
+        metrics_path = os.path.join(track_dir, "outputs", "metrics.jsonl")
+        if not (os.path.isdir(track_dir) and os.path.exists(track_json) and os.path.exists(metrics_path)):
+            continue
+        try:
+            track_cfg = json.load(open(track_json, "r", encoding="utf-8"))
+            rows = [json.loads(line) for line in open(metrics_path, "r", encoding="utf-8") if line.strip()]
+        except Exception:
+            continue
+        project = dict(track_cfg.get("project", {}) or {})
+        key = f"{project.get('platform', 'UNKNOWN')}::{project.get('genre_bucket', 'X')}"
+        reports = []
+        for row in rows[-8:]:
+            soak_report = dict(row.get("soak_report") or (row.get("meta", {}) or {}).get("soak_report") or {})
+            if soak_report.get("tested"):
+                reports.append(soak_report)
+        if not reports:
+            continue
+        steady_noop_ratio = sum(_safe_float(report.get("steady_noop_ratio"), 0.0) for report in reports) / len(reports)
+        heavy_floor = sum(_safe_float(report.get("heavy_reader_signal_floor_mean"), 0.0) for report in reports) / len(reports)
+        repair_rate = sum(_safe_float(report.get("repair_rate_mean"), 0.0) for report in reports) / len(reports)
+        dominant_mode = str(reports[-1].get("dominant_mode") or "unknown")
+        pressure = max(
+            0.0,
+            min(
+                1.0,
+                max(0.0, 0.76 - steady_noop_ratio) * 0.55
+                + max(0.0, 0.72 - heavy_floor) * 0.95
+                + max(0.0, 0.78 - repair_rate) * 0.35
+                + (0.12 if dominant_mode == "volatile" else 0.05 if dominant_mode == "noop" else 0.0),
+            ),
+        )
+        profile.setdefault(key, []).append(round(pressure, 4))
+    return {key: round(sum(values) / len(values), 4) for key, values in profile.items() if values}
+
 def generate_tracks(root_dir: str, project_name: str, platforms: List[str] = None, buckets: List[str] = None) -> List[Dict]:
     platforms = platforms or DEFAULT_PLATFORMS
     buckets = buckets or DEFAULT_BUCKETS
@@ -77,6 +119,7 @@ def generate_tracks(root_dir: str, project_name: str, platforms: List[str] = Non
     os.makedirs(tracks_dir, exist_ok=True)
     hidden_risk_profile = _hidden_reader_risk_profile(tracks_dir)
     heavy_reader_signal_profile = _heavy_reader_signal_profile(tracks_dir)
+    platform_soak_profile = _platform_soak_profile(tracks_dir)
     created = []
     for p in platforms:
         for b in buckets:
@@ -86,8 +129,19 @@ def generate_tracks(root_dir: str, project_name: str, platforms: List[str] = Non
             profile_key = f"{p}::{b}"
             hidden_reader_risk = _safe_float(hidden_risk_profile.get(profile_key), 0.0)
             heavy_reader_signal = _safe_float(heavy_reader_signal_profile.get(profile_key), 1.0)
-            bootstrap_sub_engine = pick_bootstrap_subengine(b, hidden_reader_risk + max(0.0, 0.72 - heavy_reader_signal)).key
-            design_guardrails = bootstrap_design_guardrails(hidden_reader_risk + max(0.0, 0.72 - heavy_reader_signal))
+            platform_soak_pressure = _safe_float(platform_soak_profile.get(profile_key), 0.0)
+            bootstrap_sub_engine = pick_bootstrap_subengine(
+                b,
+                hidden_reader_risk=hidden_reader_risk,
+                heavy_reader_signal_trend=heavy_reader_signal,
+                platform_soak_pressure=platform_soak_pressure,
+            ).key
+            design_guardrails = bootstrap_design_guardrails(
+                hidden_reader_risk=hidden_reader_risk,
+                heavy_reader_signal_trend=heavy_reader_signal,
+                platform_soak_pressure=platform_soak_pressure,
+                platform=p,
+            )
             # minimal track config
             cfg = {
                 "project": {
@@ -98,12 +152,14 @@ def generate_tracks(root_dir: str, project_name: str, platforms: List[str] = Non
                     "bootstrap_design_guardrails": design_guardrails,
                     "bootstrap_hidden_reader_risk": round(hidden_reader_risk, 4),
                     "bootstrap_heavy_reader_signal_trend": round(heavy_reader_signal, 4),
+                    "bootstrap_platform_soak_pressure": round(platform_soak_pressure, 4),
                 },
                 "track": {"id": track_id},
                 "phase": "STABILIZE",
                 "bootstrap_strategy": {
                     "hidden_reader_risk": round(hidden_reader_risk, 4),
                     "heavy_reader_signal_trend": round(heavy_reader_signal, 4),
+                    "platform_soak_pressure": round(platform_soak_pressure, 4),
                     "source_profile_key": profile_key,
                     "selected_sub_engine": bootstrap_sub_engine,
                     "design_guardrails": design_guardrails,
@@ -113,7 +169,7 @@ def generate_tracks(root_dir: str, project_name: str, platforms: List[str] = Non
             safe_write_text(os.path.join(tdir, "track.json"), json.dumps(cfg, ensure_ascii=False, indent=2), safe_mode=True, project_dir_for_backup=tdir)
             # initialize state.json
             safe_write_text(os.path.join(tdir, "state.json"), json.dumps({"next_episode": 1}, ensure_ascii=False, indent=2), safe_mode=True, project_dir_for_backup=tdir)
-            created.append({"track_id": track_id, "platform": p, "bucket": b, "dir": tdir, "hidden_reader_risk": round(hidden_reader_risk, 4), "heavy_reader_signal_trend": round(heavy_reader_signal, 4), "sub_engine": bootstrap_sub_engine})
+            created.append({"track_id": track_id, "platform": p, "bucket": b, "dir": tdir, "hidden_reader_risk": round(hidden_reader_risk, 4), "heavy_reader_signal_trend": round(heavy_reader_signal, 4), "platform_soak_pressure": round(platform_soak_pressure, 4), "sub_engine": bootstrap_sub_engine})
     # index
     safe_write_text(os.path.join(tracks_dir, "tracks_index.json"), json.dumps(created, ensure_ascii=False, indent=2), safe_mode=True, project_dir_for_backup=tracks_dir)
     return created

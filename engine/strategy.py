@@ -117,24 +117,48 @@ def pick_subengine(bucket: str, requested_key: str) -> SubEngine:
     return subs[0]
 
 
-def pick_bootstrap_subengine(bucket: str, hidden_reader_risk: float = 0.0) -> SubEngine:
+def pick_bootstrap_subengine(
+    bucket: str,
+    hidden_reader_risk: float = 0.0,
+    heavy_reader_signal_trend: float = 1.0,
+    platform_soak_pressure: float = 0.0,
+) -> SubEngine:
     subs = GENRE_SUBENGINES.get(bucket, [])
     if not subs:
         return SubEngine("GENERIC", "기본", "기본")
-    if hidden_reader_risk >= 0.55 and len(subs) >= 3:
+    pressure = hidden_reader_risk + max(0.0, 0.72 - heavy_reader_signal_trend) + platform_soak_pressure * 0.85
+    if pressure >= 0.9 and len(subs) >= 4:
+        return subs[3]
+    if pressure >= 0.55 and len(subs) >= 3:
         return subs[2]
-    if hidden_reader_risk >= 0.35 and len(subs) >= 2:
+    if pressure >= 0.35 and len(subs) >= 2:
         return subs[1]
     return subs[0]
 
 
-def bootstrap_design_guardrails(hidden_reader_risk: float = 0.0) -> List[str]:
+def bootstrap_design_guardrails(
+    hidden_reader_risk: float = 0.0,
+    heavy_reader_signal_trend: float = 1.0,
+    platform_soak_pressure: float = 0.0,
+    platform: str | None = None,
+) -> List[str]:
     guardrails: List[str] = []
-    if hidden_reader_risk >= 0.35:
+    pressure = hidden_reader_risk + max(0.0, 0.72 - heavy_reader_signal_trend) + platform_soak_pressure * 0.85
+    if pressure >= 0.35:
         guardrails.append("초기 기획에서 얇은 장면 연결과 말뿐인 긴장 유발 패턴을 금지한다")
         guardrails.append("초반 3화 안에 실제 손실, 선택 비용, 보상 회수 중 최소 하나를 확정한다")
-    if hidden_reader_risk >= 0.5:
+    if pressure >= 0.5:
         guardrails.append("최근과 유사한 갈등 구조와 클리프행어 어법을 반복하지 말고 보상 구조 자체를 바꾼다")
+    if platform_soak_pressure >= 0.22:
+        guardrails.append("플랫폼 cadence 압력이 높은 버킷이므로 초반 5화 안에 payoff 회수 간격을 더 촘촘하게 둔다")
+    if 0.0 < heavy_reader_signal_trend < 0.62:
+        guardrails.append("상위독자 체감 압력이 약했던 패턴을 피하고 주인공 주도 선택과 회차 말미 손실감을 강화한다")
+    if platform:
+        pacing = str((PLATFORM_STRATEGY.get(platform, {}) or {}).get("pacing") or "balanced")
+        if pacing == "aggressive":
+            guardrails.append("공격적 플랫폼이므로 정보 설명보다 즉시 갈등과 위상 변화를 우선 배치한다")
+        elif pacing == "character":
+            guardrails.append("캐릭터 중심 플랫폼이므로 관계 긴장과 감정 전환을 사건과 같은 비중으로 배치한다")
     if not guardrails:
         guardrails.append("초기 기획에서 강한 후킹과 장기 payoff를 함께 설계한다")
     return guardrails[:4]
