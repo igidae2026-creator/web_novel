@@ -329,10 +329,11 @@ def test_final_threshold_can_use_soak_history_fallback(tmp_path):
                         "dominant_mode": "steady",
                         "quality_lift_trend": 0.04,
                         "hidden_reader_risk_trend": 0.18,
+                        "heavy_reader_signal_trend": 0.79,
                         "history": [
-                            {"episode": 1, "steady_noop_ratio": 0.74, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.05, "hidden_reader_risk": 0.22},
-                            {"episode": 2, "steady_noop_ratio": 0.77, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.04, "hidden_reader_risk": 0.2},
-                            {"episode": 3, "steady_noop_ratio": 0.78, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.04, "hidden_reader_risk": 0.18},
+                            {"episode": 1, "steady_noop_ratio": 0.74, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.05, "hidden_reader_risk": 0.22, "heavy_reader_signal": 0.75},
+                            {"episode": 2, "steady_noop_ratio": 0.77, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.04, "hidden_reader_risk": 0.2, "heavy_reader_signal": 0.78},
+                            {"episode": 3, "steady_noop_ratio": 0.78, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.04, "hidden_reader_risk": 0.18, "heavy_reader_signal": 0.79},
                         ],
                     }
                 },
@@ -401,11 +402,12 @@ def test_final_threshold_blocks_convergence_when_hidden_reader_risk_trend_stays_
                         "dominant_mode": "steady",
                         "quality_lift_trend": 0.03,
                         "hidden_reader_risk_trend": 0.46,
+                        "heavy_reader_signal_trend": 0.78,
                         "history": [
-                            {"episode": 1, "steady_noop_ratio": 0.76, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.05, "hidden_reader_risk": 0.42},
-                            {"episode": 2, "steady_noop_ratio": 0.8, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.04, "hidden_reader_risk": 0.44},
-                            {"episode": 3, "steady_noop_ratio": 0.81, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.03, "hidden_reader_risk": 0.45},
-                            {"episode": 4, "steady_noop_ratio": 0.82, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.03, "hidden_reader_risk": 0.46},
+                            {"episode": 1, "steady_noop_ratio": 0.76, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.05, "hidden_reader_risk": 0.42, "heavy_reader_signal": 0.74},
+                            {"episode": 2, "steady_noop_ratio": 0.8, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.04, "hidden_reader_risk": 0.44, "heavy_reader_signal": 0.76},
+                            {"episode": 3, "steady_noop_ratio": 0.81, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.03, "hidden_reader_risk": 0.45, "heavy_reader_signal": 0.77},
+                            {"episode": 4, "steady_noop_ratio": 0.82, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.03, "hidden_reader_risk": 0.46, "heavy_reader_signal": 0.78},
                         ],
                     }
                 },
@@ -468,6 +470,80 @@ def test_final_threshold_blocks_convergence_when_hidden_reader_risk_trend_stays_
     ft_event = next(row for row in event_rows if row.get("type") == "final_threshold_evaluated")
     assert ft_event["payload"]["hidden_reader_risk_trend"] == 0.46
     assert ft_event["payload"]["reader_risk_trend_priority"] == "high"
+
+
+def test_final_threshold_blocks_convergence_when_heavy_reader_signal_trend_stays_low(tmp_path):
+    track_dir = tmp_path / "domains" / "webnovel" / "tracks" / "track_reader_signal"
+    out_dir = track_dir / "outputs"
+    out_dir.mkdir(parents=True)
+
+    _write_json(
+        track_dir / "state.json",
+        {
+            "story_state_v2": {
+                "control": {
+                    "soak_history": {
+                        "observed": 4,
+                        "steady_noop_ratio": 0.81,
+                        "dominant_mode": "steady",
+                        "quality_lift_trend": 0.03,
+                        "hidden_reader_risk_trend": 0.14,
+                        "heavy_reader_signal_trend": 0.61,
+                        "history": [
+                            {"episode": 1, "steady_noop_ratio": 0.76, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.05, "hidden_reader_risk": 0.2, "heavy_reader_signal": 0.64},
+                            {"episode": 2, "steady_noop_ratio": 0.8, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.04, "hidden_reader_risk": 0.18, "heavy_reader_signal": 0.63},
+                            {"episode": 3, "steady_noop_ratio": 0.81, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.03, "hidden_reader_risk": 0.15, "heavy_reader_signal": 0.61},
+                            {"episode": 4, "steady_noop_ratio": 0.82, "dominant_mode": "steady", "quality_lift_if_human_intervenes": 0.03, "hidden_reader_risk": 0.14, "heavy_reader_signal": 0.6},
+                        ],
+                    }
+                },
+                "promise_graph": {"payoff_integrity": 0.84, "payoff_corruption_flags": []},
+                "cast": {"protagonist": {"progress": 2, "backlash": 1, "urgency": 8}},
+            },
+            "last_quality_gate": {
+                "passed": True,
+                "checks": {"hook_score": True, "cliffhanger_valid": True, "world_instability": True},
+                "predicted_retention": 0.84,
+                "content_ceiling_total": 70,
+                "causal_score": 0.88,
+            },
+        },
+    )
+    _append_jsonl(
+        out_dir / "metrics.jsonl",
+        {
+            "episode": 4,
+            "episode_attribution": {"lineage_parent": "outline:v12", "retention_signal": 0.84, "pacing_signal": 0.75, "fatigue_signal": 0.1, "payoff_signal": 0.8},
+            "scores": {"hook_score": 0.88, "payoff_score": 0.8, "pacing_score": 0.75, "character_score": 0.79, "repetition_score": 0.1},
+            "retention": {"predicted_next_episode": 0.84},
+            "content_ceiling": {"ceiling_total": 70},
+            "meta": {"scene_causality": {"score": 0.88}},
+        },
+    )
+
+    queue_path = tmp_path / "job_queue.json"
+    supervisor_path = tmp_path / "supervisor_state.json"
+    admission_path = tmp_path / "admission_state.json"
+    promotion_path = tmp_path / "promotion_state.json"
+    save_job_queue_state({"queue_status": "running", "active_job_id": None, "jobs": []}, path=str(queue_path), safe_mode=False)
+    save_supervisor_state({"status": "running", "active_job_id": None}, path=str(supervisor_path), safe_mode=False)
+    save_admission_state({"last_scope_decision": {"material_id": "mat:reader", "decision": "accepted"}}, path=str(admission_path), safe_mode=False)
+    save_promotion_state({"last_promotion_decision": {"artifact_id": "art:reader", "decision": "promoted"}}, path=str(promotion_path), safe_mode=False)
+
+    report = evaluate_final_threshold_bundle(
+        {"quality": {"predicted_retention_min": 0.8, "causal_score_min": 0.72, "ceiling_total_min": 65}, "safe_mode": False},
+        str(out_dir),
+        cycle_context={"track_id": "track_reader_signal", "action": "generate", "next_step_recorded": True, "scope_authority_policy_ok": True, "market_feedback_handled": True},
+        queue_path=str(queue_path),
+        supervisor_path=str(supervisor_path),
+        admission_path=str(admission_path),
+        promotion_path=str(promotion_path),
+        safe_mode=False,
+    )
+
+    assert report["criteria"]["soak_steady_noop_dominance"]["passed"] is True
+    assert report["criteria"]["autonomous_convergence_trend"]["passed"] is False
+    assert report["criteria"]["autonomous_convergence_trend"]["details"]["heavy_reader_signal_trend"] == 0.61
 
 
 def test_final_threshold_history_accumulates_ready_ratio(tmp_path):

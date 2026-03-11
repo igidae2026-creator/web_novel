@@ -1013,6 +1013,7 @@ def generate_episode(cfg, state, llm, cost, ext: ExternalRankSignals, episode: i
         episode=episode,
         soak_report=soak_report,
         quality_lift_if_human_intervenes=human_quality_lift,
+        objective_scores=objective_scores,
     )
     state.set("quality_lift_if_human_intervenes", human_quality_lift)
 

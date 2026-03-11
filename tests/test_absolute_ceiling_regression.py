@@ -1267,12 +1267,14 @@ def test_record_soak_history_accumulates_stability_signal():
         episode=1,
         soak_report={"tested": True, "steady_noop_ratio": 0.74, "dominant_mode": "steady"},
         quality_lift_if_human_intervenes=0.08,
+        objective_scores={"fun": 0.78, "retention": 0.8, "pacing": 0.74, "long_run_sustainability": 0.76},
     )
     second = record_soak_history(
         state,
         episode=2,
         soak_report={"tested": True, "steady_noop_ratio": 0.82, "dominant_mode": "steady"},
         quality_lift_if_human_intervenes=0.05,
+        objective_scores={"fun": 0.82, "retention": 0.84, "pacing": 0.79, "long_run_sustainability": 0.8},
     )
 
     assert first["observed"] == 1
@@ -1280,7 +1282,9 @@ def test_record_soak_history_accumulates_stability_signal():
     assert second["steady_noop_ratio"] >= 0.74
     assert second["quality_lift_trend"] <= 0.08
     assert second["hidden_reader_risk_trend"] > 0.0
+    assert second["heavy_reader_signal_trend"] > 0.0
     assert second["history"][-1]["hidden_reader_risk"] > 0.0
+    assert second["history"][-1]["heavy_reader_signal"] > 0.0
     assert state["story_state_v2"]["control"]["soak_history"]["history"][-1]["episode"] == 2
 
 

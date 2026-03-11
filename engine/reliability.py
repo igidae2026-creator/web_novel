@@ -15,6 +15,56 @@ def _mean(values: Iterable[float]) -> float:
     return 0.0 if not values else sum(values) / len(values)
 
 
+def _heavy_reader_signal(objective_scores: Dict[str, Any], story_state: Dict[str, Any] | None = None) -> float:
+    scores = dict(objective_scores or {})
+    story = dict(story_state or {})
+    promise_graph = dict(story.get("promise_graph", {}) or {})
+    cast = dict(story.get("cast", {}) or {})
+    protagonist = dict(cast.get("protagonist", {}) or {})
+    control = dict(story.get("control", {}) or {})
+    reader_quality = dict(control.get("reader_quality", {}) or {})
+    arc_pressure = dict(control.get("arc_pressure", {}) or {})
+
+    hook = float(scores.get("fun", 0.0) or 0.0)
+    retention = float(scores.get("retention", 0.0) or 0.0)
+    pacing = float(scores.get("pacing", 0.0) or 0.0)
+    sustainability = float(scores.get("long_run_sustainability", 0.0) or 0.0)
+    fantasy = min(
+        1.0,
+        max(
+            0.0,
+            float(protagonist.get("urgency", 0.0) or 0.0) / 10.0 * 0.45
+            + float(protagonist.get("progress", 0.0) or 0.0) * 0.12
+            - float(protagonist.get("backlash", 0.0) or 0.0) * 0.08,
+        ),
+    )
+    payoff_integrity = float(promise_graph.get("payoff_integrity", 0.0) or 0.0)
+    hidden_reader_risk = (
+        float(reader_quality.get("thinness_debt", 0.0) or 0.0)
+        + float(reader_quality.get("repetition_debt", 0.0) or 0.0)
+        + float(reader_quality.get("deja_vu_debt", 0.0) or 0.0)
+        + float(reader_quality.get("fake_urgency_debt", 0.0) or 0.0)
+        + float(reader_quality.get("compression_debt", 0.0) or 0.0)
+    ) / 5.0
+    arc_drag = (
+        float(arc_pressure.get("momentum_debt", 0.0) or 0.0)
+        + float(arc_pressure.get("payoff_debt", 0.0) or 0.0)
+    ) / 2.0
+    return round(
+        _clamp(
+            hook * 0.24
+            + retention * 0.24
+            + pacing * 0.15
+            + sustainability * 0.13
+            + fantasy * 0.14
+            + payoff_integrity * 0.10
+            - min(0.22, hidden_reader_risk * 0.32)
+            - min(0.14, arc_drag * 0.2)
+        ),
+        4,
+    )
+
+
 def detect_quality_drift(
     balanced_history: List[float],
     lookback: int = 5,
@@ -202,6 +252,7 @@ def record_soak_history(
     episode: int,
     soak_report: Dict[str, Any],
     quality_lift_if_human_intervenes: float,
+    objective_scores: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     story_state = ensure_story_state(state)
     control = story_state.setdefault("control", {})
@@ -214,6 +265,7 @@ def record_soak_history(
             "dominant_mode": "unknown",
             "quality_lift_trend": 1.0,
             "hidden_reader_risk_trend": 1.0,
+            "heavy_reader_signal_trend": 0.0,
             "history": [],
         },
     )
@@ -231,12 +283,14 @@ def record_soak_history(
         ),
         4,
     )
+    heavy_reader_signal = _heavy_reader_signal(objective_scores or {}, story_state)
     snapshot = {
         "episode": int(episode),
         "steady_noop_ratio": round(float(soak_report.get("steady_noop_ratio", 0.0) or 0.0), 4),
         "dominant_mode": str(soak_report.get("dominant_mode") or "unknown"),
         "quality_lift_if_human_intervenes": round(float(quality_lift_if_human_intervenes or 0.0), 4),
         "hidden_reader_risk": hidden_reader_risk,
+        "heavy_reader_signal": heavy_reader_signal,
     }
     history = (list(soak_state.get("history", []) or []) + [snapshot])[-12:]
     observed = int(soak_state.get("observed", 0) or 0) + 1
@@ -255,6 +309,10 @@ def record_soak_history(
     )
     soak_state["hidden_reader_risk_trend"] = round(
         float(soak_state.get("hidden_reader_risk_trend", hidden_reader_risk) or hidden_reader_risk) * blend + hidden_reader_risk * (1.0 - blend),
+        4,
+    )
+    soak_state["heavy_reader_signal_trend"] = round(
+        float(soak_state.get("heavy_reader_signal_trend", heavy_reader_signal) or heavy_reader_signal) * blend + heavy_reader_signal * (1.0 - blend),
         4,
     )
     state["story_state_v2"] = story_state
@@ -284,6 +342,7 @@ def estimate_human_quality_lift(
     soak_ratio = float(soak_history.get("steady_noop_ratio", 0.0) or 0.0)
     soak_lift_trend = float(soak_history.get("quality_lift_trend", 1.0) or 1.0)
     hidden_reader_risk_trend = float(soak_history.get("hidden_reader_risk_trend", 0.0) or 0.0)
+    heavy_reader_signal_trend = float(soak_history.get("heavy_reader_signal_trend", 0.0) or 0.0)
 
     lift = 0.16
     lift -= min(0.1, balanced_total * 0.1)
@@ -296,4 +355,5 @@ def estimate_human_quality_lift(
         lift -= min(0.05, soak_ratio * 0.06)
         lift -= min(0.03, max(0.0, 0.2 - soak_lift_trend))
         lift += min(0.05, max(0.0, hidden_reader_risk_trend - 0.24) * 0.18)
+        lift += min(0.05, max(0.0, 0.72 - heavy_reader_signal_trend) * 0.18)
     return round(_clamp(lift, 0.0, 1.0), 4)
