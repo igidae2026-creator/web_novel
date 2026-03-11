@@ -189,6 +189,9 @@ def test_run_queue_loop_pauses_for_hidden_reader_risk_pressure(tmp_path, monkeyp
     assert "Generation budget exhausted" in msg
     track_queue_state = load_queue_state()
     assert track_queue_state["status"] == "paused"
+    history = json.loads((tmp_path / "domains" / "webnovel" / "tracks" / "queue_history.json").read_text(encoding="utf-8"))
+    trend_summary = history["bundle_budgeting"]["hidden_reader_risk_trend_summary"]
+    assert trend_summary["max"] == 0.0
 
 
 def test_run_queue_loop_blocks_for_hidden_reader_risk_trend_pressure(tmp_path, monkeypatch):
@@ -245,5 +248,12 @@ def test_run_queue_loop_blocks_for_hidden_reader_risk_trend_pressure(tmp_path, m
 
     assert ok is False
     assert "Generation budget exhausted" in msg
+    assert "hidden_reader_risk_trend_max=0.52" in msg
     track_queue_state = load_queue_state()
     assert track_queue_state["status"] == "blocked"
+    assert track_queue_state["bundle_budgeting"]["hidden_reader_risk_trend_summary"]["max"] == 0.52
+    assert track_queue_state["bundle_budgeting"]["hidden_reader_risk_trend_summary"]["critical_tracks"] == ["track_trend"]
+    history = json.loads((tmp_path / "domains" / "webnovel" / "tracks" / "queue_history.json").read_text(encoding="utf-8"))
+    trend_summary = history["bundle_budgeting"]["hidden_reader_risk_trend_summary"]
+    assert trend_summary["max"] == 0.52
+    assert trend_summary["top_tracks"][0]["track"] == "track_trend"

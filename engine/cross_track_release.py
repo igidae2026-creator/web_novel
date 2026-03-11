@@ -345,7 +345,19 @@ def refresh_queue_release_runtime(queue_state: Dict[str, Any], tracks_root: str)
     queue_state = dict(queue_state or {})
     plan = build_cross_track_release_plan(tracks_root)
     runtime: Dict[str, Dict[str, Any]] = {}
+    hidden_reader_risk_values: List[float] = []
+    hidden_reader_risk_tracks: List[Dict[str, Any]] = []
     for item in plan.get("release_plan", []) or []:
+        hidden_reader_risk = float(item.get("hidden_reader_risk", 0.0) or 0.0)
+        if hidden_reader_risk > 0.0:
+            hidden_reader_risk_values.append(hidden_reader_risk)
+            hidden_reader_risk_tracks.append(
+                {
+                    "track": str(item.get("track") or ""),
+                    "hidden_reader_risk": round(hidden_reader_risk, 4),
+                    "action": str(item.get("action", "stagger") or "stagger"),
+                }
+            )
         runtime[str(item.get("track"))] = {
             "action": str(item.get("action", "stagger") or "stagger"),
             "slot_offset": int(item.get("slot_offset", 0) or 0),
@@ -353,10 +365,17 @@ def refresh_queue_release_runtime(queue_state: Dict[str, Any], tracks_root: str)
             "accelerate_budget": 1 if item.get("action") == "accelerate" else 0,
             "executed": 0,
         }
+    hidden_reader_risk_summary = {
+        "track_count": len(hidden_reader_risk_tracks),
+        "mean": round(sum(hidden_reader_risk_values) / len(hidden_reader_risk_values), 4) if hidden_reader_risk_values else 0.0,
+        "max": round(max(hidden_reader_risk_values), 4) if hidden_reader_risk_values else 0.0,
+        "top_tracks": sorted(hidden_reader_risk_tracks, key=lambda item: (-float(item.get("hidden_reader_risk", 0.0) or 0.0), str(item.get("track") or "")))[:3],
+    }
     queue_state["release_runtime"] = runtime
     queue_state["release_runtime_meta"] = {
         "interference_pressure": int(plan.get("interference_pressure", 0) or 0),
         "platform_clusters": dict(plan.get("platform_clusters", {}) or {}),
+        "hidden_reader_risk_summary": hidden_reader_risk_summary,
     }
     return queue_state
 

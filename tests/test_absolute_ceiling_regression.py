@@ -879,6 +879,59 @@ def test_release_runtime_schedule_changes_queue_behavior():
         assert not accelerate_outcome["should_advance"]
         assert hold["action"] == "hold"
         assert hold_outcome["should_advance"]
+        hidden_summary = queue_state["release_runtime_meta"]["hidden_reader_risk_summary"]
+        assert hidden_summary["track_count"] == 0
+        assert hidden_summary["max"] == 0.0
+
+
+def test_release_runtime_meta_carries_hidden_reader_risk_summary():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tracks_root = os.path.join(tmpdir, "tracks")
+        os.makedirs(tracks_root, exist_ok=True)
+        tdir = os.path.join(tracks_root, "track_alpha")
+        os.makedirs(os.path.join(tdir, "outputs"), exist_ok=True)
+        with open(os.path.join(tdir, "track.json"), "w", encoding="utf-8") as f:
+            json.dump({"project": {"platform": "Munpia", "genre_bucket": "B"}}, f)
+        with open(os.path.join(tdir, "outputs", "metrics.jsonl"), "w", encoding="utf-8") as f:
+            f.write(json.dumps({"retention": {"predicted_next_episode": 0.61}, "scores": {"repetition_score": 0.18}}) + "\n")
+        with open(os.path.join(tdir, "outputs", "final_threshold_eval.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "criteria": {
+                        "reader_retention_stability": {
+                            "details": {
+                                "reader_quality_debt": {
+                                    "thinness_debt": 0.24,
+                                    "deja_vu_debt": 0.12,
+                                }
+                            }
+                        },
+                        "serialization_fatigue_control": {
+                            "details": {
+                                "reader_quality_debt": {
+                                    "fake_urgency_debt": 0.09,
+                                }
+                            }
+                        },
+                        "autonomous_convergence_trend": {
+                            "details": {
+                                "hidden_reader_risk_trend": 0.08,
+                            }
+                        },
+                    }
+                },
+                f,
+                ensure_ascii=False,
+                indent=2,
+            )
+
+        queue_state = refresh_queue_release_runtime({"status": "running", "track_dirs": [tdir], "current_index": 0}, tracks_root)
+
+        hidden_summary = queue_state["release_runtime_meta"]["hidden_reader_risk_summary"]
+        assert hidden_summary["track_count"] == 1
+        assert hidden_summary["max"] >= 0.42
+        assert hidden_summary["top_tracks"][0]["track"] == "track_alpha"
+        assert hidden_summary["top_tracks"][0]["action"] == "hold"
 
 
 def test_runtime_release_alignment_updates_story_state():

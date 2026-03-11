@@ -17,6 +17,59 @@ LOCK_TTL_SECONDS = 600  # 10 minutes
 HISTORY_PATH = os.path.join("domains","webnovel","tracks","queue_history.json")
 
 
+def _hidden_reader_risk_trend_summary(track_dirs: list[str]) -> Dict[str, Any]:
+    values = []
+    critical_tracks = []
+    caution_tracks = []
+    for track_dir in track_dirs:
+        path = os.path.join(track_dir, "outputs", "final_threshold_eval.json")
+        if not os.path.exists(path):
+            continue
+        try:
+            payload = json.load(open(path, "r", encoding="utf-8"))
+        except Exception:
+            continue
+        criteria = dict(payload.get("criteria") or {})
+        convergence_details = dict((((criteria.get("autonomous_convergence_trend", {}) or {}).get("details", {}) or {})))
+        try:
+            trend = float(
+                convergence_details.get(
+                    "hidden_reader_risk_trend",
+                    (payload.get("threshold_history", {}) or {}).get("hidden_reader_risk_trend", 0.0),
+                )
+                or 0.0
+            )
+        except Exception:
+            trend = 0.0
+        if trend <= 0.0:
+            continue
+        track_id = os.path.basename(track_dir.rstrip(os.sep)) or track_dir
+        values.append({"track": track_id, "trend": round(trend, 4)})
+        if trend >= 0.5:
+            critical_tracks.append(track_id)
+        elif trend >= 0.35:
+            caution_tracks.append(track_id)
+    ordered = sorted(values, key=lambda item: (-float(item.get("trend", 0.0) or 0.0), str(item.get("track") or "")))
+    trends = [float(item["trend"]) for item in ordered]
+    if not trends:
+        return {
+            "track_count": 0,
+            "mean": 0.0,
+            "max": 0.0,
+            "critical_tracks": [],
+            "caution_tracks": [],
+            "top_tracks": [],
+        }
+    return {
+        "track_count": len(ordered),
+        "mean": round(sum(trends) / len(trends), 4),
+        "max": round(max(trends), 4),
+        "critical_tracks": critical_tracks[:5],
+        "caution_tracks": caution_tracks[:5],
+        "top_tracks": ordered[:3],
+    }
+
+
 def _queue_bundle_severity(track_dirs: list[str]) -> str:
     severities = []
     for track_dir in track_dirs:
@@ -142,20 +195,30 @@ def run_queue_loop(cfg: Dict[str, Any], max_steps: int = 1) -> Tuple[bool, str]:
         msg_last = None
         ok_any = False
         q0 = load_queue_state()
-        severity = _queue_bundle_severity(list(q0.get("track_dirs", []) or []))
+        track_dirs = list(q0.get("track_dirs", []) or [])
+        severity = _queue_bundle_severity(track_dirs)
+        hidden_reader_risk_summary = _hidden_reader_risk_trend_summary(track_dirs)
         generation_cap = capability_generation_cap(runtime_cfg, severity)
         steps_budget = min(max(1, int(max_steps)), max(0, generation_cap))
-        h["bundle_budgeting"] = {"severity": severity, "generation_cap": generation_cap, "requested_steps": int(max_steps)}
+        h["bundle_budgeting"] = {
+            "severity": severity,
+            "generation_cap": generation_cap,
+            "requested_steps": int(max_steps),
+            "hidden_reader_risk_trend_summary": hidden_reader_risk_summary,
+        }
         if steps_budget <= 0:
-            queued_repairs = _ensure_queue_repair_work(list(q0.get("track_dirs", []) or []))
+            queued_repairs = _ensure_queue_repair_work(track_dirs)
             h["last_msg"] = f"Generation budget exhausted for bundle severity={severity}"
             if queued_repairs:
                 h["last_msg"] += f"; queued_repairs={queued_repairs}"
+            if hidden_reader_risk_summary.get("max", 0.0):
+                h["last_msg"] += f"; hidden_reader_risk_trend_max={hidden_reader_risk_summary['max']}"
             if severity == "critical":
                 q0["status"] = "blocked"
             elif severity == "caution" and q0.get("status") == "running":
                 q0["status"] = "paused"
             q0["last_error"] = h["last_msg"]
+            q0["bundle_budgeting"] = dict(h["bundle_budgeting"])
             save_queue_state(q0)
             h["last_ts"] = time.strftime("%Y-%m-%d %H:%M:%S")
             _save_history(h)
