@@ -102,6 +102,30 @@ def test_preflight_uses_runtime_repair_context_to_harden_policy():
     assert preflight["runtime_policy"]["mode"] == "priority"
 
 
+def test_preflight_blocks_for_hidden_reader_risk_trend_repair_context():
+    state_data = {
+        "story_state_v2": {
+            "control": {
+                "final_threshold_repairs": {
+                    "reader_risk_trend_repair_required": True,
+                    "reader_risk_trend_block_required": True,
+                    "hidden_reader_risk_trend": 0.52,
+                }
+            },
+            "portfolio_memory": {},
+        },
+        "predicted_retention": 0.8,
+    }
+    cfg = {"quality": {"predicted_retention_min": 0.62, "world_instability_max": 7}, "model": {"mode": "batch"}}
+
+    preflight = assess_preflight_bundle(cfg, state_data, runtime_cfg={}, episode=4)
+
+    assert preflight["risk_tier"] == "critical"
+    assert "hidden_reader_risk_trend_block" in preflight["blocking_reasons"]
+    assert preflight["runtime_policy"]["mode"] == "priority"
+    assert preflight["runtime_policy"]["request_timeout_seconds"] >= 180
+
+
 def test_preflight_escalates_for_reader_quality_repairs_and_failed_criteria(tmp_path):
     out_dir = tmp_path / "outputs"
     out_dir.mkdir(parents=True)

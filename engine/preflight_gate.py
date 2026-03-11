@@ -161,6 +161,10 @@ def assess_preflight_bundle(
         risk_score = max(risk_score, 0.62)
     elif runtime_repairs.get("reader_quality_repair_required"):
         risk_score = max(risk_score, 0.5)
+    if runtime_repairs.get("reader_risk_trend_repair_required"):
+        risk_score = max(risk_score, 0.68)
+    if runtime_repairs.get("reader_risk_trend_block_required"):
+        risk_score = max(risk_score, 0.9)
     elif reader_quality_debt >= 0.24:
         risk_score = max(risk_score, 0.5)
     if arc_debt >= 0.3:
@@ -188,6 +192,8 @@ def assess_preflight_bundle(
         blocking_reasons.append("truth_capability_not_closed")
     if "recovery_capability" in failed_bundles:
         blocking_reasons.append("recovery_capability_not_closed")
+    if runtime_repairs.get("reader_risk_trend_block_required"):
+        blocking_reasons.append("hidden_reader_risk_trend_block")
 
     tier_cfg = dict((evaluation_cfg.get("risk_tiers", {}) or {}).get(risk_tier, {}) or {})
     runtime_policy = {
@@ -225,6 +231,11 @@ def assess_preflight_bundle(
         runtime_policy["mode"] = "priority"
         runtime_policy["max_revision_passes"] = max(int(runtime_policy.get("max_revision_passes", 2) or 2), 3)
         runtime_policy["causal_repair_retry_budget"] = max(int(runtime_policy.get("causal_repair_retry_budget", 2) or 2), 3)
+    if runtime_repairs.get("reader_risk_trend_repair_required"):
+        runtime_policy["mode"] = "priority"
+        runtime_policy["max_revision_passes"] = max(int(runtime_policy.get("max_revision_passes", 2) or 2), 3)
+        runtime_policy["causal_repair_retry_budget"] = max(int(runtime_policy.get("causal_repair_retry_budget", 2) or 2), 3)
+        runtime_policy["request_timeout_seconds"] = max(int(runtime_policy.get("request_timeout_seconds", 150) or 150), 180)
     if runtime_repairs.get("scope_policy_rebind_required"):
         runtime_policy["mode"] = "priority"
     if runtime_repairs.get("human_lift_sampling_required"):
