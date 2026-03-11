@@ -75,3 +75,53 @@ def test_metaos_runtime_conformance_path_for_webnovel(tmp_path, monkeypatch):
 
     final_queue = load_job_queue_state(str(queue_path))
     assert any(job["job_id"] == "promote:" + artifact["artifact_id"] for job in final_queue["jobs"])
+
+
+def test_metaos_runtime_conformance_holds_when_adapter_carries_hidden_reader_risk_trend(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    admission_path = tmp_path / "admission_state.json"
+    promotion_path = tmp_path / "promotion_state.json"
+    queue_path = tmp_path / "job_queue.json"
+
+    material = material_from_source(
+        {
+            "project": {"platform": "Munpia", "genre_bucket": "A"},
+            "track": {"id": "munpia_a"},
+            "material_id": "src:trend",
+            "source": "feed_a",
+            "quality_score": 0.9,
+            "scope_fit_score": 0.86,
+            "risk_score": 0.2,
+            "novelty_score": 0.66,
+            "hidden_reader_risk_trend": 0.39,
+        }
+    )
+
+    scope_result = apply_scope_policy(
+        material,
+        admission_path=str(admission_path),
+        queue_path=str(queue_path),
+        safe_mode=False,
+    )
+    assert scope_result["decision"]["verdict"] == "hold"
+
+    artifact = artifact_from_episode_result(
+        {
+            "project": {"name": "adapter-check", "platform": "Munpia", "genre_bucket": "A"},
+            "output": {"root_dir": str(tmp_path / "outputs")},
+        },
+        {
+            "episode": 12,
+            "predicted_retention": 0.91,
+            "quality_score": 0.87,
+            "quality_gate": {"passed": True, "failed_checks": []},
+            "story_state": {"world": {"instability": 4}, "control": {"final_threshold_history": {"hidden_reader_risk_trend": 0.41}}},
+        },
+    )
+    promotion_result = apply_promotion_policy(
+        artifact,
+        promotion_path=str(promotion_path),
+        queue_path=str(queue_path),
+        safe_mode=False,
+    )
+    assert promotion_result["decision"]["verdict"] == "hold"

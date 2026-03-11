@@ -77,6 +77,7 @@ Until Layer 3 is rewritten through the patch method for this repository, use the
 - admission, promotion, and certification guidance now also treat hidden reader-risk trend as a blocking policy signal, so temporary market strength or one-off quality recovery no longer bypasses long-run heavy-reader fatigue risk
 - final-threshold repair runtime and queued job ordering now also treat hidden reader-risk trend as a first-class blocking signal, so long-run thinness/repetition pressure raises repair priority and can hold generation before the loop silently normalizes weak serial rhythm
 - supervisor snapshots and the runtime UI now expose hidden reader-risk trend and its priority directly, so operators can audit why the loop is blocked without reverse-engineering the full final-threshold artifact
+- adapter material/artifact normalization now carries hidden reader-risk trend into policy metadata by default, so conformance, admission, and promotion paths cannot silently drop long-run fatigue risk when handing objects across subsystem boundaries
 
 ## Conservative Completion Estimate
 
